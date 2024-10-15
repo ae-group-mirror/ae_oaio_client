@@ -1,0 +1,6 @@
+# runtime dependencies of the ae.oaio_client project
+ae_base
+ae_cdnz
+ae_paths
+ae_oaio_model
+requests
