@@ -1,0 +1,59 @@
+# THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.tpl_project V0.3.30
+image: python:3.9
+
+
+
+
+
+before_script:
+  - python --version
+  - pip install --upgrade setuptools pip
+  - pip install --upgrade -r requirements.txt -r tests/requirements.txt
+
+
+integrity:
+  script:
+    - grm -v check-integrity
+  artifacts:
+    paths:
+      - mypy_report/
+      - .pylint/
+      - htmlcov/
+      - .pytest_cache
+
+
+pages:
+  stage: deploy
+  dependencies:
+    - integrity
+  script:
+    - ls -l -R
+    - mkdir -p public/coverage
+    - mv -f -v htmlcov/* public/coverage
+    - mv -f -v .pytest_cache/coverage.txt public/
+    - mv -f -v .pytest_cache/coverage.svg public/
+    - mv -f -v mypy_report/lineprecision.txt public/
+    - mv -f -v mypy_report/mypy.svg public/
+    - mv -f -v .pylint/pylint.svg public/
+    - mv -f -v .pylint/pylint.log public/
+  artifacts:
+    paths:
+      - public
+
+
+pypi_deploy:
+  stage: deploy
+  rules:
+    # - if: $CI_COMMIT_TAG =~ /^v?[0-9]+[.][0-9]+([.][0-9]+)?$/
+    # CI_COMMIT_TAG is only set if the push does contain a new tag (and no new commit); separate push and rules are
+    # additionally creating duplicate jobs on gitlab CI - finally using release branch to trigger deploy.
+    - if: $CI_COMMIT_BRANCH =~ /^release/
+  variables:
+    # the pushed branch has to be a protected branch in order to get the CI variables for the twine/PyPI authentication.
+    TWINE_USERNAME: $PYPI_USERNAME
+    TWINE_PASSWORD: $PYPI_PASSWORD
+  before_script:
+     - pip install --upgrade aedev_setup_project pip setuptools twine wheel
+     - python setup.py sdist bdist_wheel
+  script:
+    - twine upload --verbose dist/*
