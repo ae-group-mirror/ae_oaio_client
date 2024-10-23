@@ -1,4 +1,4 @@
-# THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.tpl_project V0.3.30
+# THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.tpl_project V0.3.31
 anybadge
 coverage-badge
 aedev_git_repo_manager      # including Pillow, ae_base, ae_files, ae_paths for img/loc/snd resources tests
@@ -7,6 +7,7 @@ mypy
 pylint
 pytest
 pytest-cov
+pytest-django
 typing
 types-setuptools            # for mypy
 wheel

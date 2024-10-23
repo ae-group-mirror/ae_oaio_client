@@ -1,6 +1,6 @@
 
 ..
-    THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.tpl_project V0.3.30
+    THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.tpl_project V0.3.31
 
 contributing
 ============
@@ -66,7 +66,7 @@ using the git repository manager `grm`
 2. code and check
 
    now use your favorite IDE/Editor to implement the new feature or code the bug fix. don't forget to amend the project
-   with new unit and integrity tests, and ensure they pass, by executin from time to time the
+   with new unit and integrity tests, and ensure they pass, by executing from time to time the
    ``grm check`` action.
 
 3. publish your changes
