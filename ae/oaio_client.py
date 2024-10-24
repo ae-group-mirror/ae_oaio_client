@@ -22,7 +22,7 @@ from ae.oaio_model import (                                                     
 )
 
 
-__version__ = '0.3.2'
+__version__ = '0.3.3'
 
 
 class OaioClient(ErrorMsgMixin):
@@ -212,7 +212,7 @@ class OaioClient(ErrorMsgMixin):
                                 on any other server login failure/error; check the error in :attr:`.error_message`.
         """
         if self.connected:
-            res = self._request('get', 'current_stamp/', _in_check=True)
+            res = self._request('get', 'current_stamp/', _in_chk=True)
             if res and res.ok:
                 client_stamp = now_stamp()
                 server_stamp = res.json().get('current_stamp')
@@ -225,7 +225,7 @@ class OaioClient(ErrorMsgMixin):
             self.connected = False
 
         if not self.connected:
-            res = self._request('post', 'login/', _in_check=True,
+            res = self._request('post', 'login/', _in_chk=True,
                                 json=self.credentials, headers={'Content-Type': 'application/json'})
             if not res or not res.ok:
                 self.error_message = f"user '{self.user_name}' authentication error {getattr(res, 'status_code', '')}"
@@ -234,21 +234,31 @@ class OaioClient(ErrorMsgMixin):
 
         return True
 
-    def _request(self, method: str, slug: str, _in_check: bool = False, **kwargs) -> Optional[requests.Response]:
+    def _request(self, method: str, slug: str, _in_chk: bool = False, _get_tok: bool = False, **kwargs
+                 ) -> Optional[requests.Response]:
         """ oaio server request """
+        need_csrf = method == 'post'    # this code currently only use POST, CSRF needed also for DELETE|PATCH|PUT|...
         url = self.base_url + slug
         try:
-            if not _in_check and not self._reconnect_check():
+            if not _in_chk and not self._reconnect_check():
                 return None
 
-            self.session.get(url)    # fetch csrf token, needed for DELETE|PATCH|POST|PUT|... methods
-            csrftoken = self.session.cookies.get('csrftoken')
-
-            self.session.headers['X-CSRFToken'] = csrftoken
-            self.session.headers['Referer'] = url   # needed only for https requests
+            cookies = {}
+            if _get_tok or (need_csrf and 'X-CSRFToken' not in self.session.headers):
+                res = self.session.get(url)                             # fetch csrf token from oaio server
+                res.raise_for_status()
+                csrftoken = self.session.cookies.get('csrftoken')
+                if not res or not res.ok or not csrftoken:
+                    self.error_message = f"CSRF token {'re' if _get_tok else ''}fetch error for URL '{url}'"
+                    return None
+                self.session.headers['X-CSRFToken'] = cookies['csrftoken'] = csrftoken
+                self.session.headers['Referer'] = url   # needed only for https requests
 
             met = getattr(self.session, method)
-            res = met(url, cookies={'csrftoken': csrftoken}, **kwargs)
+            res = met(url, cookies=cookies, **kwargs)
+
+            if need_csrf and res.status_code == 403 and not _get_tok:
+                return self._request(method, slug, _get_tok=True, **kwargs)     # retry recursively
 
             res.raise_for_status()
             self.error_message = ""
@@ -256,8 +266,8 @@ class OaioClient(ErrorMsgMixin):
 
         except (requests.HTTPError, requests.ConnectionError, Exception) as exc:
             if 'json' in kwargs and 'password' in kwargs['json']:   # hide password if in kwargs['json']['password']
-                kwargs['json']['password'] = kwargs['json']['password'][:2] + "*" * len(kwargs['json']['password'])
-            self.error_message = f"{method}-request exception '{exc}' for URL '{url}' and kwargs={kwargs}"
+                kwargs['json']['password'] = kwargs['json']['password'][:2] + "*" * 9
+            self.error_message = f"{method}-request err '{exc}'; URL='{url}' CHK={_in_chk} CSRF={_get_tok} kw={kwargs}"
 
         return None
 
