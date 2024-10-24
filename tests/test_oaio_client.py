@@ -86,6 +86,7 @@ class TestMyServer:
         assert my_server.connected
 
     def test_register_file(self, my_server):
+        assert my_server.error_message == ""
         oai_obj = None
         stamp = now_stamp()
         dir_path = os_path_abspath(os_path_join(TESTS_FOLDER, 'tst_dir'))
@@ -126,6 +127,7 @@ class TestMyServer:
                 assert _cdn_file_remove(my_server, oai_obj) == ""
 
     def test_register_obj(self, my_server):
+        assert my_server.error_message == ""
         oai_obj = None
         stamp = now_stamp()
         values = {'tst_str': 'tst_val', 'tst_int': 69}
