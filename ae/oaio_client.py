@@ -22,7 +22,11 @@ from ae.oaio_model import (                                                     
 from ae.paths import Collector, normalize, placeholder_path                                             # type: ignore
 
 
-__version__ = '0.3.4'
+__version__ = '0.3.5'
+
+
+LAST_SYNC_STAMP_FILE = 'last_sync_stamp.txt'
+OLDEST_SYNC_STAMP = '20221231111111111111'
 
 
 class OaioClient(ErrorMsgMixin):
@@ -35,9 +39,8 @@ class OaioClient(ErrorMsgMixin):
                  app_id: str = "",
                  device_id: str = "",
                  csh_default_id: OaioCshIdType = 'Digi',
-                 local_objectz: Optional[OaioMapType] = None,
-                 local_root_path: str = "{ado}/oaio_root/",
                  auto_sync_sec: float = 360.9,
+                 client_root: str = "{ado}/oaio_root/",
                  ):
         """ initialize a new client instance to connect to the oaio server.
 
@@ -48,39 +51,42 @@ class OaioClient(ErrorMsgMixin):
                                 defaults to :func:`~ae.base.app_name_guess`.
         :param device_id:       id of the client device.
                                 defaults to :func:`~ae.base.os_host_name`.
-        :param csh_default_id:  id for the default content server to use.
-                                defaults to 'Digi'.
-        :param local_objectz:   optional EMPTY mapping/dict-like object to map all the registered.
-                                and subscribed oaio objects of a client.
-        :param local_root_path: local path to the folder where the oaio info and files gets cached.
-                                defaults to the placeholder path "{ado}/oaio_root/".
         :param auto_sync_sec:   time in seconds to sync with oaio server on every object registering or update.
+                                defaults to 260 seconds. pass zero/0 in order to disable auto synchronization.
+        :param client_root:     path to the folder on the local device where the oaio info and files gets cached.
+                                defaults to the placeholder path "{ado}/oaio_root/".
+        :param csh_default_id:  id for the default cloud storage server to use.
+                                defaults to 'Digi'.
         """
         self.base_url = 'http' + ('' if host[:9] in ('localhost', '127.0.0.1') else 's') + f'://{host}/api/'
         self.credentials = credentials
         self.user_name = credentials.get('username') or os_user_name()
         self.app_id = app_id or app_name_guess()
         self.device_id = device_id or os_host_name()
-        self.csh_default_id = csh_default_id
-        self.local_objectz = {} if local_objectz is None else local_objectz
-        self.local_root_path = normalize(local_root_path)
         self.auto_sync_seconds = auto_sync_sec
-
-        self.unsync_objectz: list[OaiObject] = []
-        self.last_sync_stamp = ""
-        self._init_root_paths()
-        self._load_local_object_infos()
+        self.client_root = normalize(client_root)
+        self.csh_default_id = csh_default_id
 
         self.session = requests.Session()
         self.session.headers.update(extra_headers(self.user_name, self.device_id, self.app_id))
         self.connected = False
+
+        self._init_client_folders()
+        self._last_sync_stamp = ""
+        self.client_objectz: OaioMapType = {}
         self.synchronize_with_server_if_online()
 
     def __del__(self):
+        """ automatic logout and close of the http session. """
         if self.connected:
             self._request('post', 'logout/')
         if self.session:
             self.session.close()
+
+    def _auto_sync_check(self):
+        """ check if synchronization with servers should be done. """
+        if self.auto_sync_seconds and stamp_diff(self.last_sync_stamp, now_stamp()) > self.auto_sync_seconds:
+            self.synchronize_with_server_if_online()
 
     def _csh_api(self, csh_id: OaioCshIdType) -> Optional[CshApiBase]:
         """ determine api and credentials of cloud storage host specified by its id from the web server db/config. """
@@ -93,42 +99,27 @@ class OaioClient(ErrorMsgMixin):
         self.error_message = f"oaio server {getattr(res, 'status_code', 'offline')} error in {csh_id}-args fetch"
         return None
 
-    def _changed_server_objectz(self) -> OaioMapType:
-        """ get from server all newly added and changed objectz of all the subscriptions of the current user.
+    def _client_file_root(self, oaio_id: OaioIdType, values: OaioValuesType) -> str:
+        """ determine the path on client/device where the file(s) attached to an oaio get stored.
 
-        :return:                mapping object with objectz from oaio server if online else an empty mapping object.
+        :param oaio_id:         id of the oaio.
+        :param values:          oaio values (client_values if upload else server_values).
+        :return:                path string.
         """
-        changed_objects = {}
-
-        res = self._request('get', 'oaio_stampz/')
-        if res and res.ok:
-            for oaio_dict in res.json():
-                oai_obj = OaiObject(**oaio_dict)
-
-                oaio_id = oai_obj.oaio_id
-                if oaio_id not in self.local_objectz:
-                    changed_objects[oaio_id] = oai_obj
-                elif oai_obj.server_stamp > self.local_objectz[oaio_id].client_stamp:
-                    changed_objects[oaio_id] = oai_obj
-
-        return changed_objects
-
-    def _client_root_path(self, oaio_id: OaioIdType, values: OaioValuesType) -> str:
-        """ determine the local root path for the passed oaio values (client_values if upload else server_values). """
         if ROOT_VALUES_KEY not in values:
-            root_folder = os_path_join(self.local_root_path, FILES_DIR, oaio_id)
+            root_folder = os_path_join(self.client_root, FILES_DIR, oaio_id)
         else:
-            root_folder = values[ROOT_VALUES_KEY]
+            root_folder = values[ROOT_VALUES_KEY]   # use values root_folder if isabs or starts with PATH_PLACEHOLDER
             if root_folder and root_folder[0] == '{':
                 root_folder = normalize(root_folder)
-            elif not os.path.isabs(root_folder):              # use root_folder if isabs or starts with PATH_PLACEHOLDER
-                root_folder = os_path_join(self.local_root_path, root_folder)
+            else:   # if not os.path.isabs(root_folder):
+                root_folder = os_path_join(self.client_root, root_folder)
         return root_folder
 
     def _download_object(self, oai_obj: OaiObject) -> bool:
         """ save oaio info and download optional attached files to local device/cache.
 
-        :param oai_obj:
+        :param oai_obj:         :class:`~ae.oaio_model.OaiObject` dataclass instance.
         :return:                True if object info and files got downloaded without errors, else False.
         """
         files, csh_api, client_path, server_path = self._object_client_server_file_paths(oai_obj, upload=False)
@@ -143,7 +134,7 @@ class OaioClient(ErrorMsgMixin):
                 return False
             write_file(os_path_join(client_path, file_path), content)
 
-        self._save_local_object_info(oai_obj)
+        self._save_client_object_info(oai_obj)
 
         return True
 
@@ -157,50 +148,70 @@ class OaioClient(ErrorMsgMixin):
         coll.collect(folder_path, append=("**/*", "**/.*"), only_first_of=())
         return [os_path_relpath(_, folder_path) for _ in coll.files]
 
-    def _init_root_paths(self):
-        """ called on the first start of the client to create the default folders under :attr:`.local_root_path`. """
-        file_path = os_path_join(self.local_root_path, OBJECTS_DIR)
+    def _init_client_folders(self):
+        """ called on the first start of the client to create the folders and files under :attr:`.client_root`. """
+        file_path = os_path_join(self.client_root, OBJECTS_DIR)
         if not os_path_isdir(file_path):
             os.makedirs(file_path)
 
-        file_path = os_path_join(self.local_root_path, FILES_DIR)
+        file_path = os_path_join(self.client_root, FILES_DIR)
         if not os_path_isdir(file_path):
             os.makedirs(file_path)
 
-    def _load_local_object_infos(self):
-        """ load actual client/local oaio info. """
-        unsync = []
-        self.local_objectz.clear()  # wipe content keeping mapping (maybe passed from app to notify/update UI on change)
+        file_path = os_path_join(self.client_root, LAST_SYNC_STAMP_FILE)        # add file with old self.last_sync_stamp
+        if not os_path_isfile(file_path):                                       # to ensure sync on first app start
+            write_file(file_path, OLDEST_SYNC_STAMP)                            # (difference > self.auto_sync_seconds)
 
-        info_path = os_path_join(self.local_root_path, OBJECTS_DIR)
+    def _load_client_object_info(self, oaio_id: OaioIdType, info_path: str = "") -> OaiObject:
+        """ load actual client/local oaio info of the oaio specified by its id. """
+        obj_lit = read_file(os_path_join(info_path or os_path_join(self.client_root, OBJECTS_DIR), oaio_id))
+        obj_dict = literal_eval(obj_lit)
+        return OaiObject(**obj_dict)
+
+    def _load_client_objectz(self) -> OaioMapType:
+        """ load actual client/local oaio infos of all local oai objects.
+
+        :return:                mapping object with objectz stored on the local device.
+        """
+        objectz = {}
+        info_path = os_path_join(self.client_root, OBJECTS_DIR)
         for oaio_id in os.listdir(info_path):
-            obj_lit = read_file(os_path_join(info_path, oaio_id))
-            obj_dict = literal_eval(obj_lit)
-            oai_obj = OaiObject(**obj_dict)
+            oai_obj = self._load_client_object_info(oaio_id, info_path=info_path)
+            objectz[oaio_id] = oai_obj
+        return objectz
 
-            if oai_obj.client_stamp != oai_obj.server_stamp:
-                unsync.append(oai_obj)
+    def _load_server_objectz(self) -> OaioMapType:
+        """ get from server all newly added and changed objectz of all the subscriptions of the current user.
 
-            self.local_objectz[oaio_id] = oai_obj
+        :return:                mapping object with objectz subscribed by the user from oaio server.
+                                if the client is offline an empty mapping object.
+        """
+        objectz = {}
+        res = self._request('get', 'oaio_stampz/')
+        if res and res.ok:
+            for oaio_dict in res.json():
+                oai_obj = OaiObject(**oaio_dict)
+                objectz[oai_obj.oaio_id] = oai_obj
 
-        unsync.sort(key=lambda _obj: _obj.client_stamp)
-        self.unsync_objectz = unsync
+        return objectz
 
     def _object_client_server_file_paths(self, oai_obj: OaiObject, upload: bool
                                          ) -> tuple[list[str], Optional[CshApiBase], str, str]:
         """ get attached files, the cloud storage api id, and the files root paths on client and cloud storage host. """
-        stamp = oai_obj.client_stamp if upload else oai_obj.server_stamp
-        values = oai_obj.client_values if upload else oai_obj.server_values
+        oaio_id = oai_obj.oaio_id
 
-        files = values.get(FILES_VALUES_KEY, [])
+        stamp = oai_obj.client_stamp if upload else oai_obj.server_stamp
+        new_values = oai_obj.client_values if upload else oai_obj.server_values
+        # _old_values = oai_obj.server_values if upload else self.client_objectz[oaio_id].values
+
+        files = new_values.get(FILES_VALUES_KEY, [])
         csh_id = oai_obj.csh_id
-        if not files or (csh_api := self._csh_api(csh_id)) is None:
+        if not files or not csh_id or (csh_api := self._csh_api(csh_id)) is None:
             if files:
                 self.error_message = f"wrong cloud storage '{csh_id}' for {'up' if upload else 'down'}load of {oai_obj}"
             return [], None, "", ""
 
-        oaio_id = oai_obj.oaio_id
-        client_path = self._client_root_path(oaio_id, values)
+        client_path = self._client_file_root(oaio_id, new_values)
         server_path = os_path_join(oaio_id, stamp)
 
         return files, csh_api, client_path, server_path
@@ -235,62 +246,66 @@ class OaioClient(ErrorMsgMixin):
 
         return True
 
-    def _request(self, method: str, slug: str, _in_chk: bool = False, _get_tok: bool = False, **kwargs
+    def _request(self, method: str, slug: str, _in_chk: bool = False, **request_kwargs
                  ) -> Optional[requests.Response]:
-        """ oaio server request """
-        need_csrf = method == 'post'    # this code currently only use POST, CSRF needed also for DELETE|PATCH|PUT|...
+        """ oaio server request checking CSRF for POST and automatic reconnect.
+
+        :param method:          http request method (either 'get' or 'post').
+        :param slug:            request slug added to base URL.
+        :param _in_chk:         preventing endless recursion. only True for internal calls from
+                                :meth:`~OaioClient._reconnect_check`, else False.
+        :param request_kwargs:  extra kwargs passed onto the http request :paramref:`~_request.method` call.
+        :return:                http response, or None if connection cannot be established (offline, authentication, ..)
+                                or if any other error occurred (check self.error_message for details).
+        """
         url = self.base_url + slug
         try:
             if not _in_chk and not self._reconnect_check():
                 return None
 
-            cookies = {}
-            if _get_tok or (need_csrf and 'X-CSRFToken' not in self.session.headers):
-                res = self.session.get(url)                             # fetch csrf token from oaio server
-                res.raise_for_status()
-                csrftoken = self.session.cookies.get('csrftoken')
-                if not res or not res.ok or not csrftoken:
-                    self.error_message = f"CSRF token {'re' if _get_tok else ''}fetch error for URL '{url}'"
-                    return None
-                self.session.headers['X-CSRFToken'] = cookies['csrftoken'] = csrftoken
-                self.session.headers['Referer'] = url   # needed only for https requests
+            hdr_token = self.session.headers.get('X-CSRFToken')     # only DELETE|PATCH|POST|PUT|... need a CSRF token
+            ses_token = self.session.cookies.get('csrftoken')
+            if method != 'get' and (not hdr_token or hdr_token != ses_token):
+                if not hdr_token:  # works without this if (same: if hdr_token == ses_token), but with 10% more traffic?
+                    res = self.session.get(url)                     # fetch new/changed CSRF token from oaio server
+                    ses_token = self.session.cookies.get('csrftoken')
+                    if not res or not res.ok or not ses_token:
+                        raise Exception(f"CSRF fetch error {getattr(res, 'status_code', '?')}; tok={bool(ses_token)}")
+                request_kwargs.setdefault('cookies', {'csrftoken': ses_token})
+                self.session.headers['X-CSRFToken'] = ses_token
+                self.session.headers['Referer'] = url               # needed only for https requests
 
             met = getattr(self.session, method)
-            res = met(url, cookies=cookies, **kwargs)
-
-            if need_csrf and res.status_code == 403 and not _get_tok:
-                return self._request(method, slug, _get_tok=True, **kwargs)     # retry recursively
-
+            res = met(url, **request_kwargs)
             res.raise_for_status()
             self.error_message = ""
             return res
 
         except (requests.HTTPError, requests.ConnectionError, Exception) as exc:
-            if 'json' in kwargs and 'password' in kwargs['json']:   # hide password if in kwargs['json']['password']
-                kwargs['json']['password'] = kwargs['json']['password'][:2] + "*" * 9
-            self.error_message = f"{method}-request err '{exc}'; URL='{url}' CHK={_in_chk} CSRF={_get_tok} kw={kwargs}"
+            if 'json' in request_kwargs and 'password' in request_kwargs['json']:   # hide password if in request_kwargs
+                request_kwargs['json']['password'] = request_kwargs['json']['password'][:2] + "*" * 9
+            self.error_message = f"{method}-request err '{exc}'; URL='{url}' CHK={_in_chk} kw={request_kwargs}"
 
         return None
 
-    def _save_local_object_info(self, oai_obj: OaiObject):
+    def _save_client_object_info(self, oai_obj: OaiObject):
         """ save oaio to local oaio info. """
         if not oai_obj.client_stamp:    # just downloaded from server
             oai_obj.client_stamp = oai_obj.server_stamp
             oai_obj.client_values = oai_obj.server_values
-        elif not oai_obj.server_stamp or oai_obj.client_stamp > oai_obj.server_stamp:
-            assert not self.unsync_objectz or self.unsync_objectz[-1].client_stamp < oai_obj.client_stamp
-            self.unsync_objectz.append(oai_obj)
 
-        self.local_objectz[oai_obj.oaio_id] = oai_obj
-
-        write_file(os_path_join(self.local_root_path, OBJECTS_DIR, oai_obj.oaio_id),
-                   repr(object_dict(oai_obj)))
+        self.client_objectz[oai_obj.oaio_id] = oai_obj
+        write_file(os_path_join(self.client_root, OBJECTS_DIR, oai_obj.oaio_id), repr(object_dict(oai_obj)))
 
     def _upload_object(self, oai_obj: OaiObject, register: bool = False) -> bool:
-        """ send locally changed oaio to content and oaio/web servers and update the specified oai_obj instance.
+        """ save local/client object and try to send changes to storage and oaio/web servers.
 
-        :return:                True if upload went well or False on failure or if servers are offline.
+        :param oai_obj:         :class:`~ae.oaio_model.OaiObject` dataclass instance to update/upload/register.
+        :param register:        pass True for new oaio to register or False for already existing ones to be updated.
+        :return:                True if register/upload went well or False on failure or if servers are offline.
         """
+        self._save_client_object_info(oai_obj)
+
         files, csh_api, client_path, server_path = self._object_client_server_file_paths(oai_obj, upload=True)
         if files and csh_api is None:
             return False
@@ -304,10 +319,9 @@ class OaioClient(ErrorMsgMixin):
 
         action = REGISTER_ACTION if register else UPLOAD_ACTION
         res = self._request('post', f'{action}/', json=object_dict(oai_obj))
-        if not res or not res.ok:
-            self.error_message = f"object upload of {oai_obj} to server failed."
+        if not res:
+            self.error_message = f"object upload of {oai_obj} to server postponed."
             return False
-
         srv_dict = res.json()
         if 'e_r_r' in srv_dict:
             self.error_message = f"_upload_object() received server error: {srv_dict['e_r_r']}"
@@ -316,10 +330,28 @@ class OaioClient(ErrorMsgMixin):
 
         for field_name, value in srv_dict.items():
             setattr(oai_obj, field_name, value)   # update field values client_stamp, server_stamp, ...
+        self._save_client_object_info(oai_obj)
 
         return True
 
     # public api of this client instance ##########################################################
+
+    @property
+    def last_sync_stamp(self) -> OaioStampType:
+        """ timestamp of last synchronization with the oaio/storage servers.
+
+        :getter:                timestamp of the last server synchronization.
+        :setter:                any assigned error message will be accumulated to recent error messages.
+                                pass an empty string to reset the error message.
+        """
+        if not self._last_sync_stamp:
+            self._last_sync_stamp = read_file(os_path_join(self.client_root, LAST_SYNC_STAMP_FILE))
+        return self._last_sync_stamp
+
+    @last_sync_stamp.setter
+    def last_sync_stamp(self, stamp: OaioStampType):
+        write_file(os_path_join(self.client_root, LAST_SYNC_STAMP_FILE), stamp)
+        self._last_sync_stamp = stamp
 
     def register_file(self, file_name: str, root_path: str = "", stamp: OaioStampType = "", csh_id: OaioCshIdType = ""
                       ) -> Optional[OaiObject]:
@@ -327,9 +359,9 @@ class OaioClient(ErrorMsgMixin):
 
         :param file_name:       name of the new file object to register.
         :param root_path:       root path on local-machine of the new file object to register.
-                                using :attr:`.local_root_path` if not specified.
+                                using :attr:`.client_root` if not specified.
         :param stamp:           optional timestamp (created by :func:`~ae.oaio_model.now_stamp` if not specified).
-        :param csh_id:          content server id or empty string to use default content server.
+        :param csh_id:          cloud storage server id or empty string to use default cloud storage server.
         :return:                new OaiObject instance
                                 or None if either stamp or oaio_id are already registered (check self.error_message).
         :raises AssertionError: if file to register does not exist.
@@ -346,9 +378,9 @@ class OaioClient(ErrorMsgMixin):
         """ register new oaio folder object.
 
         :param folder_path:     root path on the local-machine/client of the new folder object to register.
-                                using :attr:`.local_root_path` if not specified.
+                                using :attr:`.client_root` if not specified.
         :param stamp:           optional timestamp (created by :func:`~ae.oaio_model.now_stamp` if not specified).
-        :param csh_id:          content server id or empty string to use default content server.
+        :param csh_id:          cloud storage server id or empty string to use default cloud storage server.
         :return:                new OaiObject instance
                                 or None if either stamp or oaio_id are already registered (check self.error_message).
         :raises AssertionError: if files to register does not exist.
@@ -364,9 +396,8 @@ class OaioClient(ErrorMsgMixin):
 
         :param values:          values data to register as a new oaio object.
         :param stamp:           optional timestamp (created by :func:`~ae.oaio_model.now_stamp` if not specified).
-        :param csh_id:          content server id. using default content server if not specified or empty.
-        :return:                new OaiObject instance
-                                or None if either stamp or oaio_id are already registered (check self.error_message).
+        :param csh_id:          cloud storage server id. using default cloud storage server if not specified or empty.
+        :return:                new OaiObject instance.
         """
         stamp = stamp or now_stamp()
 
@@ -382,12 +413,9 @@ class OaioClient(ErrorMsgMixin):
         )
 
         if self._upload_object(oai_obj, register=True):
-            self._save_local_object_info(oai_obj)
-            if stamp_diff(self.last_sync_stamp, now_stamp()) > self.auto_sync_seconds:
-                self.synchronize_with_server_if_online()
-            return oai_obj
+            self._auto_sync_check()
 
-        return None
+        return oai_obj
 
     def synchronize_with_server_if_online(self) -> bool:
         """ synchronize local changes to server and any update/changes done on other clients from server to this client.
@@ -399,18 +427,20 @@ class OaioClient(ErrorMsgMixin):
         if not self._reconnect_check():
             return False
 
+        soz = self._load_server_objectz()
+        self.client_objectz = coz = self._load_client_objectz()
         error = False
 
-        for oai_obj in self.unsync_objectz[:]:
-            if self._upload_object(oai_obj):
-                self.unsync_objectz.remove(oai_obj)
-            else:
-                error = True    # self._upload_object() extended already self.error_message
+        for cob in sorted(coz.values(), key=lambda _: _.client_stamp):
+            if cob.client_stamp > cob.server_stamp:
+                error = not self._upload_object(cob) or error   # self._upload_object() put self.error_message on error
 
-        for oai_obj in self._changed_server_objectz().values():
-            error = not self._download_object(oai_obj) or error
+        newer = [_ for _ in soz.values() if coz.get(_.oaio_id, OaiObject(_.oaio_id)).client_stamp < _.server_stamp]
+        for sob in sorted(newer, key=lambda _: _.server_stamp):
+            error = not self._download_object(sob) or error
 
-        self.last_sync_stamp = now_stamp()
+        if not error:
+            self.last_sync_stamp = now_stamp()
 
         return not error
 
@@ -433,11 +463,11 @@ class OaioClient(ErrorMsgMixin):
         :param oaio_id:         id of the oai file object to update.
         :param file_name:       name of the file.
         :param root_path:       root path on local-machine of the new file object to register.
-                                using :attr:`.local_root_path` if not specified.
-        :return:                the updated oaio.
+                                using :attr:`.client_root` if not specified.
+        :return:                the updated :class:`~ae.oaio_model.OaiObject` dataclass instance.
         :raises AssertionError: if file to update does not exist.
         """
-        values = self.local_objectz[oaio_id].client_values
+        values = self.client_objectz[oaio_id].client_values
         if file_name:
             values[FILES_VALUES_KEY] = file_name
         else:
@@ -452,33 +482,18 @@ class OaioClient(ErrorMsgMixin):
 
         return self.update_object(oaio_id, values)
 
-    def update_folder(self, oaio_id: OaioIdType, added_files: Sequence[str] = (), removed_files: Sequence[str] = ()
-                      ) -> OaiObject:
+    def update_folder(self, oaio_id: OaioIdType) -> OaiObject:
         """ update oai folder object locally.
 
         :param oaio_id:         id of the oai folder object to update.
-        :param added_files:     file paths to be added.
-        :param removed_files:   file paths to be removed.
-        :return:                the updated oaio.
-        :raises AssertionError: if same file is in added_files and in removed_files,
+        :return:                the updated :class:`~ae.oaio_model.OaiObject` dataclass instance.
+        :raises AssertionError: if same file is in add_files and in removed_files,
                                 or if one of the files to update does not exist.
         """
-        values = self.local_objectz[oaio_id].client_values
-        root_path = values.get(ROOT_VALUES_KEY, "")
-
-        if added_files or removed_files:
-            assert not (set(added_files) & set(removed_files)), f"duplicates: {set(added_files) & set(removed_files)}"
-            for file_path in added_files:
-                assert os_path_isfile(normalize(os_path_join(root_path, file_path))), f"missing '{file_path}' to add"
-            file_paths = values[FILES_VALUES_KEY]
-            file_paths.extend(added_files)
-            for file_path in removed_files:
-                file_paths.remove(file_path)
-
-        else:           # check all files for additions/removals
-            root_folder = self._client_root_path(oaio_id, values)
-            new_files = self._folder_files(root_folder)
-            values[FILES_VALUES_KEY] = new_files
+        values = self.client_objectz[oaio_id].client_values
+        client_root = self._client_file_root(oaio_id, values)
+        new_files = self._folder_files(client_root)
+        values[FILES_VALUES_KEY] = new_files
 
         return self.update_object(oaio_id, values)
 
@@ -488,23 +503,17 @@ class OaioClient(ErrorMsgMixin):
         :param oaio_id:         id of the oaio to update.
         :param values:          values of the oaio.
         :param stamp:           optional timestamp (using :func:`~ae.oaio_model.now_stamp` if not specified).
-        :return:                the updated oaio.
+        :return:                the updated :class:`~ae.oaio_model.OaiObject` dataclass instance.
         """
-        old_obj = self.local_objectz[oaio_id]
-        new_obj = OaiObject(**object_dict(old_obj))
+        cob = self.client_objectz[oaio_id]
 
-        new_obj.client_stamp = stamp or now_stamp()
-        new_obj.client_values = values
+        cob.client_stamp = stamp or now_stamp()
+        cob.client_values = values
 
-        if self._upload_object(new_obj):
-            if old_obj.client_stamp == old_obj.server_stamp:
-                new_obj.server_values = old_obj.client_values
-            self._save_local_object_info(new_obj)
+        if self._upload_object(cob):   # save client changes locally and try to upload directly if client is online
+            self._auto_sync_check()
 
-        if stamp_diff(self.last_sync_stamp, now_stamp()) > self.auto_sync_seconds:
-            self.synchronize_with_server_if_online()
-
-        return new_obj
+        return cob
 
     def upsert_subscription(self, oaio_id: OaioIdType, user_name: str,
                             write_access: OaioCshWriteAccessType = READ_ONLY_ACCESS) -> int:
@@ -531,26 +540,25 @@ class OaioClient(ErrorMsgMixin):
         :param oaio_id:         id of the oaio to unregister.
         :param wipe_files:      pass True to also remove/wipe all attached file(s) on the local machine.
         """
-        oai_obj = self.local_objectz.pop(oaio_id, None)
+        oai_obj = self.client_objectz.pop(oaio_id, None)
         if oai_obj is None:
-            self.error_message = f"local/client object to delete/unregister with id '{oaio_id}' not found"
+            self.error_message = f"client object to delete/unregister with id '{oaio_id}' not found"
             return False
 
-        # noinspection PyUnresolvedReferences,PyTypeChecker
-        res = self._request('post', f'{DELETE_ACTION}/', json=object_dict(oai_obj))
+        # noinspection PyTypeChecker
+        res = self._request('post', f'{DELETE_ACTION}/', json=object_dict(oai_obj))             # PyCharm inspection Bug
         if not res or not res.ok:
             self.error_message = f"object delete/unregister of {oai_obj} to server failed."
             return False
 
-        if oai_obj in self.unsync_objectz:
-            # noinspection PyTypeChecker
-            self.unsync_objectz.remove(oai_obj)
-        if os_path_isfile(path := os_path_join(self.local_root_path, OBJECTS_DIR, oaio_id)):
+        if os_path_isfile(path := os_path_join(self.client_root, OBJECTS_DIR, oaio_id)):
             os.remove(path)
 
         if wipe_files:
             # noinspection PyUnresolvedReferences
-            if os_path_isdir(path := self._client_root_path(oaio_id, oai_obj.client_values)):   # PyCharm inspection Bug
+            if os_path_isdir(path := self._client_file_root(oaio_id, oai_obj.client_values)):   # PyCharm inspection Bug
                 shutil.rmtree(path)
+
+        self._auto_sync_check()
 
         return True
