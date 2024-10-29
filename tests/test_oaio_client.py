@@ -8,10 +8,11 @@ from conftest import skip_gitlab_ci
 
 from ae.base import (
     TESTS_FOLDER, load_dotenvs, os_path_abspath, os_path_isdir, os_path_isfile, os_path_join, write_file)
-from ae.oaio_model import CREATE_WRITE_ACCESS, FILES_VALUES_KEY, OaiObject, ROOT_VALUES_KEY, now_stamp
+from ae.oaio_model import CREATE_WRITE_ACCESS, FILES_DIR, FILES_VALUES_KEY, OBJECTS_DIR, OaiObject, ROOT_VALUES_KEY, \
+    now_stamp
 from ae.paths import normalize
 
-from ae.oaio_client import OaioClient
+from ae.oaio_client import LAST_SYNC_STAMP_FILE, OaioClient
 
 
 load_dotenvs()
@@ -23,7 +24,11 @@ def my_server():
     ocl = OaioClient(os.environ['OAIO_HOST_NAME'],
                      {'username': os.environ['OAIO_USERNAME'], 'password': os.environ['OAIO_PASSWORD']},
                      )
+    last_sync_stamp = ocl.last_sync_stamp
+
     yield ocl
+
+    ocl.last_sync_stamp = last_sync_stamp
 
 
 def _csh_file_content(client_obj: OaioClient, oai_obj: OaiObject) -> bytes:
@@ -50,19 +55,27 @@ def _csh_file_remove(client_obj: OaioClient, oai_obj: OaiObject) -> str:
 class TestInstantiation:
     def test_args(self):
         cre_args = {'cre_key': 'cre_val'}
-        loc_oz = {}
-        loc_path = 'local/root/path'
+        tst_root = os_path_join(TESTS_FOLDER, 'tst')
+        loc_path = os_path_join(tst_root, 'root/path')
 
-        ocl = OaioClient("hOsT", cre_args, 'app_id', 'dev_id', 'csh_id', loc_oz, loc_path, 369.12)
+        try:
+            ocl = OaioClient("hOsT", cre_args, 'app_id', 'dev_id', 'csh_id', 369.12, loc_path)
 
-        assert "hOsT" in ocl.base_url
-        assert ocl.credentials == cre_args
-        assert ocl.app_id == 'app_id'
-        assert ocl.device_id == 'dev_id'
-        assert ocl.csh_default_id == 'csh_id'
-        assert ocl.local_objectz is loc_oz
-        assert ocl.local_root_path == os_path_abspath(loc_path)
-        assert ocl.auto_sync_seconds == 369.12
+            assert "hOsT" in ocl.base_url
+            assert ocl.credentials == cre_args
+            assert ocl.app_id == 'app_id'
+            assert ocl.device_id == 'dev_id'
+            assert ocl.csh_default_id == 'csh_id'
+            assert ocl.auto_sync_seconds == 369.12
+            assert ocl.client_root == normalize(loc_path)
+
+            assert os_path_isdir(os_path_join(loc_path, OBJECTS_DIR))
+            assert os_path_isdir(os_path_join(loc_path, FILES_DIR))
+            assert os_path_isfile(os_path_join(loc_path, LAST_SYNC_STAMP_FILE))
+
+        finally:
+            if os_path_isdir(loc_path):
+                shutil.rmtree(loc_path)
 
     def test_defaults(self):
         ocl = OaioClient("", {})
@@ -70,7 +83,7 @@ class TestInstantiation:
         assert ocl.app_id
         assert ocl.device_id
         assert ocl.csh_default_id == 'Digi'
-        assert ocl.local_root_path == normalize("{ado}/oaio_root/")
+        assert ocl.client_root == normalize("{ado}/oaio_root/")
 
     def test_invalid_host_instantiation_args(self):
         ocl = OaioClient("", {})
@@ -92,7 +105,7 @@ class TestMyServer:
         dir_path = os_path_abspath(os_path_join(TESTS_FOLDER, 'tst_fil_dir'))
         fil_path = os_path_join(dir_path, 'tst_fil.tst')
         fil_content = b"test file \x00 binary content \x01\x02\x03\xff"
-        local_object_count = len(my_server.local_objectz)
+        local_object_count = len(my_server.client_objectz)
         try:
             os.makedirs(dir_path)
             write_file(fil_path, fil_content)
@@ -112,9 +125,9 @@ class TestMyServer:
             assert not oai_obj.server_stamp
             assert oai_obj.csh_write_access == CREATE_WRITE_ACCESS
 
-            assert len(my_server.local_objectz) == local_object_count + 1
-            assert oai_obj.oaio_id in my_server.local_objectz
-            assert my_server.local_objectz[oai_obj.oaio_id] == oai_obj
+            assert len(my_server.client_objectz) == local_object_count + 1
+            assert oai_obj.oaio_id in my_server.client_objectz
+            assert my_server.client_objectz[oai_obj.oaio_id] == oai_obj
 
             assert os_path_isfile(fil_path)
             assert _csh_file_content(my_server, oai_obj) == fil_content
@@ -137,7 +150,7 @@ class TestMyServer:
                       os_path_join(sub_dirs[1], 'tst_sub3_sub_fil.tst'),
                       ]
         fil_content = b"test file \x00 binary content \x01\x02\x03\xff"
-        local_object_count = len(my_server.local_objectz)
+        local_object_count = len(my_server.client_objectz)
         csh_api = my_server._csh_api(my_server.csh_default_id)
         svr_path = ""
         try:
@@ -167,9 +180,9 @@ class TestMyServer:
             assert not oai_obj.server_stamp
             assert oai_obj.csh_write_access == CREATE_WRITE_ACCESS
 
-            assert len(my_server.local_objectz) == local_object_count + 1
-            assert oai_obj.oaio_id in my_server.local_objectz
-            assert my_server.local_objectz[oai_obj.oaio_id] == oai_obj
+            assert len(my_server.client_objectz) == local_object_count + 1
+            assert oai_obj.oaio_id in my_server.client_objectz
+            assert my_server.client_objectz[oai_obj.oaio_id] == oai_obj
 
         finally:
             if os_path_isdir(root_path):
@@ -184,7 +197,7 @@ class TestMyServer:
         oai_obj = None
         stamp = now_stamp()
         values = {'tst_str': 'tst_val', 'tst_int': 69}
-        local_object_count = len(my_server.local_objectz)
+        local_object_count = len(my_server.client_objectz)
         try:
             oai_obj = my_server.register_object(values, stamp=stamp)
             assert my_server.error_message == ""
@@ -198,9 +211,9 @@ class TestMyServer:
             assert not oai_obj.server_stamp
             assert oai_obj.csh_write_access == CREATE_WRITE_ACCESS
 
-            assert len(my_server.local_objectz) == local_object_count + 1
-            assert oai_obj.oaio_id in my_server.local_objectz
-            assert my_server.local_objectz[oai_obj.oaio_id] == oai_obj
+            assert len(my_server.client_objectz) == local_object_count + 1
+            assert oai_obj.oaio_id in my_server.client_objectz
+            assert my_server.client_objectz[oai_obj.oaio_id] == oai_obj
 
         except Exception as exc:
             assert False, f"re-raising test run exception: {exc}"
