@@ -5,7 +5,7 @@ import os
 import shutil
 
 from ast import literal_eval
-from typing import Optional, Sequence
+from typing import Optional, Sequence, cast
 
 import requests
 
@@ -22,7 +22,7 @@ from ae.oaio_model import (  # type: ignore
 from ae.paths import Collector, normalize, placeholder_path                                             # type: ignore
 
 
-__version__ = '0.3.6'
+__version__ = '0.3.7'
 
 
 LAST_SYNC_STAMP_FILE = 'last_sync_stamp.txt'
@@ -277,7 +277,7 @@ class OaioClient(ErrorMsgMixin):
                                                 failure="" if ses_token else ": empty token", add_err=False):
                         raise Exception(err_msg)
                 request_kwargs.setdefault('cookies', {'csrftoken': ses_token})
-                self.session.headers['X-CSRFToken'] = ses_token
+                self.session.headers['X-CSRFToken'] = cast(str, ses_token)  # w/o cast in types-requests 2.31.0.20240311
                 self.session.headers['Referer'] = url               # needed only for https requests
 
             met = getattr(self.session, method)
