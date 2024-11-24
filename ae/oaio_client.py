@@ -9,23 +9,28 @@ from typing import Optional, Sequence, cast
 
 import requests
 
-from ae.base import (                                                                                   # type: ignore
-    app_name_guess, os_host_name, os_path_isdir, os_path_isfile, os_path_join, os_path_relpath,
+from ae.base import (  # type: ignore
+    app_name_guess, defuse, os_host_name, os_path_isdir, os_path_isfile, os_path_join, os_path_relpath,
     os_user_name, read_file, write_file,
     ErrorMsgMixin)
 from ae.cloud_storage import CshApiBase, csh_api_class                                                  # type: ignore
 from ae.oaio_model import (  # type: ignore
-    CREATE_WRITE_ACCESS, DELETE_ACTION, FILES_DIR, FILES_VALUES_KEY, MAX_STAMP_DIFF, OBJECTS_DIR,
-    OaioUserIdType, READ_ONLY_ACCESS, REGISTER_ACTION, ROOT_VALUES_KEY, UPLOAD_ACTION, OLDEST_SYNC_STAMP,
-    OaioCshIdType, OaioMapType, OaioIdType, OaioStampType, OaioValuesType, OaioCshWriteAccessType,
+    CREATE_ACCESS_RIGHT, DELETE_ACCESS_RIGHT, DELETE_ACTION, FILES_DIR, FILES_VALUES_KEY, MAX_STAMP_DIFF,
+    NO_ACCESS_RIGHT, OBJECTS_DIR,
+    OaioUserIdType, READ_ACCESS_RIGHT, REGISTER_ACTION, ROOT_VALUES_KEY, UPDATE_ACCESS_RIGHT, UPLOAD_ACTION,
+    OLDEST_SYNC_STAMP,
+    OaioCshIdType, OaioMapType, OaioIdType, OaioStampType, OaioValuesType, OaioAccessRightType,
     OaiObject, extra_headers, now_stamp, object_dict, object_id, stamp_diff)
 from ae.paths import Collector, normalize, placeholder_path                                             # type: ignore
 
 
-__version__ = '0.3.7'
+__version__ = '0.3.8'
 
 
-LAST_SYNC_STAMP_FILE = 'last_sync_stamp.txt'
+LAST_SYNC_STAMP_FILE = 'last_sync_stamp.txt'    #: file name to store the last synchronization timestamp
+
+ACCESS_ORDER = CREATE_ACCESS_RIGHT + DELETE_ACCESS_RIGHT + UPDATE_ACCESS_RIGHT + READ_ACCESS_RIGHT + NO_ACCESS_RIGHT
+""" obj access right order, to sort the userz returned by :meth:`OaioClient.userz_access` """
 
 
 class OaioClient(ErrorMsgMixin):
@@ -47,7 +52,9 @@ class OaioClient(ErrorMsgMixin):
         :param credentials:     oaio server user identification credentials kwargs (dict with the keys
                                 'username' and 'password').
         :param app_id:          optional id/name of the app from where the client is connecting from.
-                                defaults to :func:`~ae.base.app_name_guess`.
+                                defaults to :attr:`~ae.core.AppBase.app_name` attribute value (if :mod:`ae.core`
+                                got included in project) or (if not set) to the return value of the
+                                function :func:`~ae.base.app_name_guess`.
         :param device_id:       id of the client device.
                                 defaults to :func:`~ae.base.os_host_name`.
         :param csh_default_id:  id for the default cloud storage server to use.
@@ -57,10 +64,15 @@ class OaioClient(ErrorMsgMixin):
         :param client_root:     path to the folder on the local device where the oaio info and files gets cached.
                                 defaults to the placeholder path "{ado}/oaio_root/".
         """
+        assert defuse(app_id) == app_id, f"{app_id=} contains invalid characters {set(defuse(app_id)) - set(app_id)=}"
+        assert defuse(device_id) == device_id, f"invalid chr {set(defuse(device_id)) - set(device_id)=} in {device_id=}"
+
+        super().__init__()
+
         self.base_url = 'http' + ('' if host[:9] in ('localhost', '127.0.0.1') else 's') + f'://{host}/api/'
         self.credentials = credentials
         self.user_name = credentials.get('username') or os_user_name()
-        self.app_id = app_id or app_name_guess()
+        self.app_id = app_id or self.cae and self.cae.app_name or app_name_guess()
         self.device_id = device_id or os_host_name()
         self.csh_default_id = csh_default_id
         self.auto_sync_seconds = auto_sync
@@ -106,7 +118,7 @@ class OaioClient(ErrorMsgMixin):
         csh_id = oai_obj.csh_id
         if not files or not csh_id or (csh_api := self._csh_api(csh_id)) is None:
             if files:
-                self.error_message = f"cloud storage '{csh_id}' empty/invalid; oai_obj={oai_obj}"
+                self.error_message = f"cloud storage {csh_id=} empty/invalid; {oai_obj=}"
             return [], None, "", ""
 
         oaio_id = oai_obj.oaio_id
@@ -118,7 +130,7 @@ class OaioClient(ErrorMsgMixin):
     def _csh_api(self, csh_id: OaioCshIdType) -> Optional[CshApiBase]:
         """ determine api and credentials of cloud storage host specified by its id from the web server db/config. """
         res = self._request('get', f'csh_args/{csh_id}')
-        if self._res_err(res, f"oaio server error in {csh_id}-args fetch"):
+        if self._res_err(res, f"oaio server error in {csh_id=}-args fetch"):
             return None
 
         csh_kwargs = res.json()                         # type: ignore # self._res_err ensures that res is not None
@@ -137,7 +149,7 @@ class OaioClient(ErrorMsgMixin):
             os.remove(path)
             return True
 
-        self.error_message = f"delete client object integrity error: path={path} id={oaio_id} obj={oai_obj}"
+        self.error_message = f"delete client object integrity error: {path=} {oaio_id=} {oai_obj=}"
         return False
 
     def _download_object(self, oai_obj: OaiObject) -> bool:
@@ -154,7 +166,7 @@ class OaioClient(ErrorMsgMixin):
             assert csh_api is not None  # for mypy
             content = csh_api.deployed_file_content(os_path_join(server_path, file_path))
             if content is None:
-                self.error_message = f"cloud storage download of ({oai_obj}.){file_path} error: {csh_api.error_message}"
+                self.error_message = f"cloud storage download error: {csh_api.error_message=} {oai_obj=} {file_path=}"
                 return False
             write_file(os_path_join(client_path, file_path), content, make_dirs=True)
 
@@ -226,8 +238,9 @@ class OaioClient(ErrorMsgMixin):
         """ check if server got already connected and (re)connect if not.
 
         :return                 True if still connected or successfully reconnected
-                                or False if offline, connection cannot be established, CSRF token not available or
-                                on any other server login failure/error; check the error in :attr:`.error_message`.
+                                or False if offline, connection cannot be established, CSRF token not available or on
+                                any other server login failure/error; in these cases check the message in the property
+                                :attr:`~OaioClient.error_message` (inherited from :class:`~ae.base.ErrorMsgMixin`).
         """
         if self.connected:
             res = self._request('get', 'current_stamp/', _in_chk=True)
@@ -235,9 +248,9 @@ class OaioClient(ErrorMsgMixin):
                 client_stamp = now_stamp()
                 server_stamp = res.json().get('current_stamp')
                 if abs(stamp_diff(client_stamp, server_stamp)) > MAX_STAMP_DIFF:
-                    self.error_message = f"clocks are out of sync; client={client_stamp} server={server_stamp}"
+                    self.error_message = f"clocks are out of sync; {client_stamp=} {server_stamp=}"
                     return False
-                return server_stamp
+                return True
 
             self.session.headers.pop('X-CSRFToken')
             self.connected = False
@@ -273,7 +286,7 @@ class OaioClient(ErrorMsgMixin):
                 if not hdr_token:  # works without this if (same: if hdr_token == ses_token), but with 10% more traffic?
                     res = self.session.get(url)                     # fetch new/changed CSRF token from oaio server
                     ses_token = self.session.cookies.get('csrftoken')
-                    if err_msg := self._res_err(res, "CSRF fetch error",
+                    if err_msg := self._res_err(res, f"CSRF fetch error in {method=} with {url=}",
                                                 failure="" if ses_token else ": empty token", add_err=False):
                         raise Exception(err_msg)
                 request_kwargs.setdefault('cookies', {'csrftoken': ses_token})
@@ -289,14 +302,20 @@ class OaioClient(ErrorMsgMixin):
         except (requests.HTTPError, requests.ConnectionError, Exception) as exc:
             if 'json' in request_kwargs and 'password' in request_kwargs['json']:   # hide password if in request_kwargs
                 request_kwargs['json']['password'] = request_kwargs['json']['password'][:2] + "*" * 9
-            self.error_message = f"{method}-request err '{exc}'; URL='{url}' CHK={_in_chk} kw={request_kwargs}"
+            self.error_message = f"{method}-request {exc=}; {url=} {_in_chk=} {request_kwargs=}"
 
         return None
 
     def _res_err(self, res: Optional[requests.Response], msg: str, failure: str = "", add_err: bool = True) -> str:
         """ web request response error checker, amending error message with status-code. """
         if not res or not res.ok or failure:
-            msg += f"{failure}; status-code={getattr(res, 'status_code', '?')}"
+            msg += f"{failure};"
+            if res:
+                msg += f" {getattr(res, 'status_code', '?')=}"
+                try:
+                    msg += f" {res.json()=}"
+                except (AttributeError, Exception):
+                    msg += f" {getattr(res, 'content', '¿')=}"
             if add_err:
                 self.error_message = msg
             return msg
@@ -325,18 +344,16 @@ class OaioClient(ErrorMsgMixin):
             assert csh_api is not None  # for mypy
             if not csh_api.deploy_file(os_path_join(server_path, file_path),
                                        source_path=os_path_join(client_path, file_path)):
-                self.error_message = f"'{file_path}' cloud storage upload error: '{csh_api.error_message}' of {oai_obj}"
+                self.error_message = f"'{file_path}' cloud storage upload error: {csh_api.error_message=} {oai_obj=}"
                 return False
 
         action = UPLOAD_ACTION if oai_obj.server_stamp else REGISTER_ACTION
         res = self._request('post', f'{action}/', json=object_dict(oai_obj))
         if self._res_err(res, f"postponed {action} onto server of {oai_obj}"):
             return False
+
         srv_dict = res.json()               # type: ignore # self._res_err ensures that res is not None
-        if 'e_r_r' in srv_dict:
-            self.error_message = f"_upload_object() received server error: {srv_dict['e_r_r']}"
-            return False
-        assert srv_dict.get('oaio_id') == oai_obj.oaio_id, f"oaio id: {srv_dict.get('oaio_id')} != {oai_obj.oaio_id}"
+        assert srv_dict.get('oaio_id') == oai_obj.oaio_id, f"{srv_dict.get('oaio_id')=} not matching {oai_obj.oaio_id=}"
 
         oai_obj.server_stamp = oai_obj.client_stamp
         oai_obj.server_values = oai_obj.client_values
@@ -426,7 +443,7 @@ class OaioClient(ErrorMsgMixin):
                                 or None if either stamp or oaio_id are already registered (check self.error_message).
         """
         stamp = stamp or now_stamp()
-        assert stamp > OLDEST_SYNC_STAMP, f"register_object(): got too old stamp {stamp}; oldest={OLDEST_SYNC_STAMP}"
+        assert stamp > OLDEST_SYNC_STAMP, f"register_object(): got too old {stamp=}; {OLDEST_SYNC_STAMP=}"
 
         oaio_id = oaio_id or object_id(user_name=self.user_name, device_id=self.device_id, app_id=self.app_id,
                                        stamp=stamp, values=values)
@@ -436,10 +453,10 @@ class OaioClient(ErrorMsgMixin):
             client_stamp=stamp,                     # could be changed by server on upload if conflicts with other stamp
             client_values=values,
             csh_id=csh_id or self.csh_default_id,
-            csh_write_access=CREATE_WRITE_ACCESS,   # registering owner has always all access rights
             username=self.user_name,
             device_id=self.device_id,
             app_id=self.app_id,
+            csh_access_right=CREATE_ACCESS_RIGHT,  # registering owner has always all access rights
         )
 
         self._save_client_object_info(oai_obj)
@@ -490,7 +507,7 @@ class OaioClient(ErrorMsgMixin):
         if registered:                          # if registered on server
             # noinspection PyTypeChecker
             res = self._request('post', f'{DELETE_ACTION}/', json=object_dict(oai_obj))     # PyCharm inspection Bug
-            if self._res_err(res, f"object delete/unregister of {oai_obj} to server failed"):
+            if self._res_err(res, f"object delete/unregister to server failed; {oai_obj=}"):
                 return self.error_message
 
         if self._delete_client_object(oaio_id):
@@ -518,7 +535,7 @@ class OaioClient(ErrorMsgMixin):
         """
         data = {'POid': oaio_id, 'PUid': user_name}
         res = self._request('post', 'unsubscribe/', json=data)
-        if not self._res_err(res, f"unsubscribe of usr {user_name} and id {oaio_id} failed"):
+        if not self._res_err(res, f"unsubscribe of {user_name=} and {oaio_id=} failed"):
             if user_name == self.user_name:
                 self._delete_client_object(oaio_id)
 
@@ -552,7 +569,7 @@ class OaioClient(ErrorMsgMixin):
         file_path = normalize(os_path_join(root_path, file_name))
 
         if file_content is None:
-            assert os_path_isfile(file_path), f"file to update does not exist in {file_path}"
+            assert os_path_isfile(file_path), f"file to update does not exist in {file_path=}"
         else:
             write_file(file_path, file_content, make_dirs=True)
 
@@ -600,30 +617,40 @@ class OaioClient(ErrorMsgMixin):
         return oai_obj
 
     def upsert_subscription(self, oaio_id: OaioIdType, user_name: OaioUserIdType,
-                            write_access: OaioCshWriteAccessType = READ_ONLY_ACCESS) -> int:
+                            access_right: OaioAccessRightType = READ_ACCESS_RIGHT) -> int:
         """ add new subscriber of an oai object or update extra fields/defaults of an existing user subscription.
 
         :param oaio_id:         id of the oaio to subscribe to.
         :param user_name:       name of the subscribing user.
-        :param write_access:    user access rights to the subscribed oaio. pass e.g. the value
-                                :data:`~ae.oaio_model.UPDATE_WRITE_ACCESS` to give the user update rights.
+        :param access_right:    user access rights to the subscribed oaio. pass e.g. the value
+                                :data:`~ae.oaio_model.UPDATE_ACCESS_RIGHT` to give the user update rights.
                                 see allowed argument values in the :data:`~ae.oaio_model.ACCESS_RIGHTS` tuple.
         :return:                the primary key integer value (Pubz.Pid) of the added/updated Pubz subscription record
                                 or 0/zero if an error occurred.
         """
-        data = {'POid': oaio_id, 'PUid': user_name, 'write_access': write_access}
+        data = {'POid': oaio_id, 'PUid': user_name, 'access_right': access_right}
         res = self._request('post', 'subscribe/', json=data)    # json-kwarg implies content-type 'application/json' hdr
-        if self._res_err(res, f"subscription of user '{user_name}' for object '{oaio_id}' failed"):
+        if self._res_err(res, f"subscription of {user_name=} for {oaio_id=} failed"):
             return 0
         return res.json().get('Pid', 0)     # type: ignore # self._res_err ensures that res is not None
 
-    def user_names(self) -> list[str]:
-        """ determine a list of all the registered usernames.
+    def userz_access(self, oaio_id: OaioIdType) -> list[dict[str, str]]:
+        """ determine a list of all the registered users and their access right to the specified oaio.
 
-        :return:                list of usernames, or empty list on error.
+        :param oaio_id:         oaio id to determine users and access rights for.
+        :return:                list of dicts with username and access_right keys, or empty list on error.
+                                the returned list is sorted by the access_right and username. the constant
+                                :data:`ACCESS_ORDER` specifies the resulting order of the access rights
+                                (create, delete, update, read).
         """
-        res = self._request('get', 'userz/')
-        return res.json() if res and res.ok else []
+        res = self._request('get', f'user_subz/{oaio_id}')
+        warn_msg = self._res_err(res, f"Warning: OaioClient.userz_access() error; {oaio_id=}", add_err=False)
+        if warn_msg:
+            self.vpo(warn_msg)
+            return []
+
+        assert res, "for mypy - not seeing that self._res_err is checking res and returning empty string if not None"
+        return sorted(res.json(), key=lambda _: str(ACCESS_ORDER.index(_['access_right'])) + _['username'])
 
     def wipe_user(self, user_name: OaioUserIdType) -> str:
         """ wipe the specified user including all its objects, subscriptions and log entries.

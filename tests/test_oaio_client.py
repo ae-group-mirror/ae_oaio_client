@@ -12,8 +12,9 @@ from ae.base import (
     os_path_isfile, os_path_join, os_user_name, read_file, write_file)
 from ae.cloud_storage import CshApiBase, DigiApi
 from ae.oaio_model import (
-    CREATE_WRITE_ACCESS, DELETE_ACTION, FILES_DIR, FILES_VALUES_KEY, HTTP_HEADER_USR_ID, OBJECTS_DIR, REGISTER_ACTION,
-    ROOT_VALUES_KEY, UPDATE_WRITE_ACCESS, OaiObject, UPLOAD_ACTION, now_stamp, object_dict)
+    CREATE_ACCESS_RIGHT, DELETE_ACTION, DOWNLOAD_ACTION, FILES_DIR, FILES_VALUES_KEY, HTTP_HEADER_USR_ID, OBJECTS_DIR,
+    REGISTER_ACTION,
+    ROOT_VALUES_KEY, UPDATE_ACCESS_RIGHT, OaiObject, UPLOAD_ACTION, now_stamp, object_dict)
 from ae.paths import normalize, placeholder_path
 
 from ae.oaio_client import LAST_SYNC_STAMP_FILE, OaioClient
@@ -183,13 +184,13 @@ def _mocked_get_or_post_success_response(url: str, **kwargs) -> requests.Respons
     elif act_slug in ('subscribe', 'unsubscribe'):
         pid = 369963
         mock_res.json.return_value = {'Pid': pid, 'message': f"Pid:{pid} PUid/POid:{kwargs['json']}"}
-    elif act_slug == 'userz':
-        mock_res.json.return_value = ['mocked_username']
+    elif act_slug == 'user_subz':
+        mock_res.json.return_value = [{'username': 'mocked_username', 'access_right': CREATE_ACCESS_RIGHT}]
     elif act_slug == 'wipe_user':
         mock_res.json.return_value = {'message': f"mocked success for wipe user {kwargs}"}
     elif 'json' in kwargs:
         mock_res.json.return_value = kwargs['json']
-    else:
+    else:                                                   # action slugs: DOWNLOAD_ACTION, 'login', 'logout'
         mock_res.json.return_value = {'message': f"mocked success for url {url} and kwargs={kwargs}"}
 
     return mock_res
@@ -288,7 +289,7 @@ class TestOaioClientWithMockedServers:
             assert not oai_obj.server_values
             assert oai_obj.client_stamp == stamp
             assert not oai_obj.server_stamp
-            assert oai_obj.csh_write_access == CREATE_WRITE_ACCESS
+            assert oai_obj.csh_access_right == CREATE_ACCESS_RIGHT
 
             assert len(mocked_client.client_objectz) == local_object_count + 1
             assert oaio_id in mocked_client.client_objectz
@@ -334,7 +335,7 @@ class TestOaioClientWithMockedServers:
             assert not oai_obj.server_values
             assert oai_obj.client_stamp == stamp
             assert not oai_obj.server_stamp
-            assert oai_obj.csh_write_access == CREATE_WRITE_ACCESS
+            assert oai_obj.csh_access_right == CREATE_ACCESS_RIGHT
 
             assert len(mocked_client.client_objectz) == local_object_count + 1
             assert oai_obj.oaio_id in mocked_client.client_objectz
@@ -393,7 +394,7 @@ class TestOaioClientWithMockedServers:
             assert not oai_obj.server_values
             assert oai_obj.client_stamp == stamp
             assert not oai_obj.server_stamp
-            assert oai_obj.csh_write_access == CREATE_WRITE_ACCESS
+            assert oai_obj.csh_access_right == CREATE_ACCESS_RIGHT
 
             assert len(mocked_client.client_objectz) == local_object_count + 1
             assert oaio_id in mocked_client.client_objectz
@@ -682,7 +683,7 @@ class TestOaioClientWithMockedServers:
             assert oai_obj.client_stamp == upd_stamp
             assert oai_obj.server_stamp == reg_stamp
             assert oai_obj.client_values == oai_obj.server_values
-            assert oai_obj.csh_write_access == CREATE_WRITE_ACCESS
+            assert oai_obj.csh_access_right == CREATE_ACCESS_RIGHT
 
             assert len(mocked_client.client_objectz) == 1
             assert oai_obj.oaio_id in mocked_client.client_objectz
@@ -732,7 +733,7 @@ class TestOaioClientWithMockedServers:
             assert oai_obj.server_values[FILES_VALUES_KEY][0] == reg_name
             assert oai_obj.client_stamp == upd_stamp
             assert oai_obj.server_stamp == reg_stamp
-            assert oai_obj.csh_write_access == CREATE_WRITE_ACCESS
+            assert oai_obj.csh_access_right == CREATE_ACCESS_RIGHT
 
             assert len(mocked_client.client_objectz) == 1
             assert oaio_id in mocked_client.client_objectz
@@ -868,11 +869,11 @@ class TestOaioClientWithMockedServers:
         assert oai_obj
         assert oai_obj.oaio_id in mocked_client.client_objectz
         assert oai_obj.username == mocked_client.user_name
-        assert oai_obj.csh_write_access == CREATE_WRITE_ACCESS
+        assert oai_obj.csh_access_right == CREATE_ACCESS_RIGHT
 
         pid = 0
         try:
-            pid = mocked_client.upsert_subscription(oai_obj.oaio_id, other_user, write_access=UPDATE_WRITE_ACCESS)
+            pid = mocked_client.upsert_subscription(oai_obj.oaio_id, other_user, access_right=UPDATE_ACCESS_RIGHT)
             assert mocked_client.error_message == ""
             assert pid != 0
 
@@ -891,17 +892,23 @@ class TestOaioClientWithMockedServers:
         oai_obj = mocked_client.register_object({})
         mocked_client.session.post.side_effect = _mocked_get_or_post_failure_response
 
-        pid = mocked_client.upsert_subscription(oai_obj.oaio_id, other_user, write_access=UPDATE_WRITE_ACCESS)
+        pid = mocked_client.upsert_subscription(oai_obj.oaio_id, other_user, access_right=UPDATE_ACCESS_RIGHT)
 
         assert pid == 0
         assert oai_obj.oaio_id in mocked_client.error_message
         assert other_user in mocked_client.error_message
 
-    def test_user_names(self, mocked_client):
-        users = mocked_client.user_names()
+    def test_userz_access(self, mocked_client):
+        users = mocked_client.userz_access('any_id_because_only_checking_for_correct_user_name')
         assert isinstance(users, list)
         assert len(users) == 1
-        assert users[0] == 'mocked_username'
+        assert users[0]['username'] == 'mocked_username'
+
+    def test_userz_access_err(self, mocked_client):
+        mocked_client.session.post.side_effect = _mocked_get_or_post_failure_response
+        users = mocked_client.userz_access('any_id_because_only_checking_for_correct_user_name')
+        assert isinstance(users, list)
+        assert len(users) == 0
 
     def test_wipe_user(self, mocked_client):
         oai_obj = None
@@ -945,13 +952,14 @@ def live_client():
 
     # noinspection PyProtectedMember,PyTypeChecker
     assert not os.listdir(local_obj_cache_path) and not ocl._load_server_objectz()  # ensure empty/clean test env
-    assert other_user not in ocl.user_names()
+    assert other_user not in [_['username'] for _ in ocl.userz_access('any_existing_or_not_existing_oaio_id')]
 
     yield ocl
 
     # noinspection PyProtectedMember,PyTypeChecker
     assert not os.listdir(local_obj_cache_path) and not ocl._load_server_objectz()  # ensure empty/clean test env
-    assert other_user not in ocl.user_names()
+    all_users = [_['username'] for _ in ocl.userz_access('any_existing_or_not_existing_oaio_id')]
+    assert other_user not in all_users
     shutil.rmtree(client_root)
 
 
@@ -999,7 +1007,7 @@ class TestIntegrationWithLiveServers:
             assert not oai_obj.server_values
             assert oai_obj.client_stamp == stamp
             assert not oai_obj.server_stamp
-            assert oai_obj.csh_write_access == CREATE_WRITE_ACCESS
+            assert oai_obj.csh_access_right == CREATE_ACCESS_RIGHT
 
             assert len(live_client.client_objectz) == local_object_count + 1
             assert oaio_id in live_client.client_objectz
@@ -1045,7 +1053,7 @@ class TestIntegrationWithLiveServers:
             assert not oai_obj.server_values
             assert oai_obj.client_stamp == stamp
             assert not oai_obj.server_stamp
-            assert oai_obj.csh_write_access == CREATE_WRITE_ACCESS
+            assert oai_obj.csh_access_right == CREATE_ACCESS_RIGHT
 
             assert len(live_client.client_objectz) == local_object_count + 1
             assert oai_obj.oaio_id in live_client.client_objectz
@@ -1103,7 +1111,7 @@ class TestIntegrationWithLiveServers:
             assert oai_obj.client_stamp == stamp
             assert not oai_obj.server_stamp
             assert not oai_obj.server_values
-            assert oai_obj.csh_write_access == CREATE_WRITE_ACCESS
+            assert oai_obj.csh_access_right == CREATE_ACCESS_RIGHT
             assert len(live_client.client_objectz) == local_object_count + 1
             assert oaio_id in live_client.client_objectz
             assert live_client.client_objectz[oaio_id] == oai_obj
@@ -1127,7 +1135,7 @@ class TestIntegrationWithLiveServers:
             assert oai_obj.client_stamp == stamp
             assert oai_obj.server_stamp == stamp
             assert oai_obj.server_values == oai_obj.client_values
-            assert oai_obj.csh_write_access == CREATE_WRITE_ACCESS
+            assert oai_obj.csh_access_right == CREATE_ACCESS_RIGHT
             assert len(live_client.client_objectz) == local_object_count + 1
 
         finally:
@@ -1158,7 +1166,7 @@ class TestIntegrationWithLiveServers:
             assert not oai_obj.server_values
             assert oai_obj.client_stamp == stamp
             assert not oai_obj.server_stamp
-            assert oai_obj.csh_write_access == CREATE_WRITE_ACCESS
+            assert oai_obj.csh_access_right == CREATE_ACCESS_RIGHT
             assert len(live_client.client_objectz) == local_object_count + 1
             assert oai_obj.oaio_id in live_client.client_objectz
             assert live_client.client_objectz[oai_obj.oaio_id] == oai_obj
@@ -1174,7 +1182,7 @@ class TestIntegrationWithLiveServers:
             assert oai_obj.server_values == values
             assert oai_obj.client_stamp == stamp
             assert oai_obj.server_stamp == stamp
-            assert oai_obj.csh_write_access == CREATE_WRITE_ACCESS
+            assert oai_obj.csh_access_right == CREATE_ACCESS_RIGHT
             assert len(live_client.client_objectz) == local_object_count + 1
 
         finally:
@@ -1193,11 +1201,11 @@ class TestIntegrationWithLiveServers:
         assert oai_obj.oaio_id in live_client._load_server_objectz()
         assert oai_obj.oaio_id in live_client.client_objectz
         assert oai_obj.username == live_client.user_name
-        assert oai_obj.csh_write_access == CREATE_WRITE_ACCESS
+        assert oai_obj.csh_access_right == CREATE_ACCESS_RIGHT
 
         pid = 0
         try:
-            pid = live_client.upsert_subscription(oai_obj.oaio_id, other_user, write_access=UPDATE_WRITE_ACCESS)
+            pid = live_client.upsert_subscription(oai_obj.oaio_id, other_user, access_right=UPDATE_ACCESS_RIGHT)
             assert live_client.error_message == ""
             assert pid != 0
 
@@ -1290,7 +1298,7 @@ class TestIntegrationWithLiveServers:
         assert oai_obj.server_values == oai_obj.client_values
         assert oai_obj.client_stamp == upd_stamp
         assert oai_obj.server_stamp == reg_stamp
-        assert oai_obj.csh_write_access == CREATE_WRITE_ACCESS
+        assert oai_obj.csh_access_right == CREATE_ACCESS_RIGHT
 
         assert len(live_client.client_objectz) == local_object_count + 1
         assert oaio_id in live_client.client_objectz
@@ -1346,7 +1354,7 @@ class TestIntegrationWithLiveServers:
         assert oai_obj.client_stamp == upd_stamp
         assert oai_obj.server_stamp == reg_stamp
         assert oai_obj.server_values == oai_obj.client_values
-        assert oai_obj.csh_write_access == CREATE_WRITE_ACCESS
+        assert oai_obj.csh_access_right == CREATE_ACCESS_RIGHT
         assert len(live_client.client_objectz) == local_object_count + 1
         assert oaio_id in live_client.client_objectz
         assert live_client.client_objectz[oaio_id] == oai_obj
@@ -1370,7 +1378,7 @@ class TestIntegrationWithLiveServers:
         assert oai_obj.client_stamp == upd_stamp
         assert oai_obj.server_stamp == upd_stamp, f"reg={reg_stamp} upd={upd_stamp}"
         assert oai_obj.server_values == oai_obj.client_values
-        assert oai_obj.csh_write_access == CREATE_WRITE_ACCESS
+        assert oai_obj.csh_access_right == CREATE_ACCESS_RIGHT
         assert len(live_client.client_objectz) == local_object_count + 1
 
         # cleanup
@@ -1401,7 +1409,7 @@ class TestIntegrationWithLiveServers:
         assert not oai_obj.server_values
         assert oai_obj.client_stamp == upd_stamp
         assert not oai_obj.server_stamp
-        assert oai_obj.csh_write_access == CREATE_WRITE_ACCESS
+        assert oai_obj.csh_access_right == CREATE_ACCESS_RIGHT
         assert len(live_client.client_objectz) == local_object_count + 1
         assert oai_obj.oaio_id in live_client.client_objectz
         assert live_client.client_objectz[oai_obj.oaio_id] == oai_obj
@@ -1417,7 +1425,7 @@ class TestIntegrationWithLiveServers:
         assert oai_obj.server_values == upd_values
         assert oai_obj.client_stamp == upd_stamp
         assert oai_obj.server_stamp == upd_stamp
-        assert oai_obj.csh_write_access == CREATE_WRITE_ACCESS
+        assert oai_obj.csh_access_right == CREATE_ACCESS_RIGHT
         assert len(live_client.client_objectz) == local_object_count + 1
 
         if oai_obj:
@@ -1435,9 +1443,9 @@ class TestIntegrationWithLiveServers:
             assert oai_obj.oaio_id in live_client._load_server_objectz()
             assert oai_obj.oaio_id in live_client.client_objectz
             assert oai_obj.username == live_client.user_name
-            assert oai_obj.csh_write_access == CREATE_WRITE_ACCESS
+            assert oai_obj.csh_access_right == CREATE_ACCESS_RIGHT
 
-            pid = live_client.upsert_subscription(oai_obj.oaio_id, other_user, write_access=UPDATE_WRITE_ACCESS)
+            pid = live_client.upsert_subscription(oai_obj.oaio_id, other_user, access_right=UPDATE_ACCESS_RIGHT)
             assert live_client.error_message == ""
             assert pid != 0
 
@@ -1452,10 +1460,13 @@ class TestIntegrationWithLiveServers:
             if oai_obj:
                 assert live_client.unregister_object(oai_obj.oaio_id) == ""
 
-    def test_user_names(self, live_client):
-        users = live_client.user_names()
+    def test_userz_access(self, live_client):
+        users = live_client.userz_access("any-id")
         assert isinstance(users, list)
         assert len(users) >= 1
+        assert isinstance(users[0], dict)
+        assert 'username' in users[0]
+        assert 'access_right' in users[0]
 
     def test_wipe_user(self, live_client):
         oai_obj = None
@@ -1463,10 +1474,10 @@ class TestIntegrationWithLiveServers:
             oai_obj = live_client.register_object({})
             assert live_client.synchronize_with_server_if_online(), f"Err={live_client.error_message}"
             assert live_client.upsert_subscription(oai_obj.oaio_id, other_user)  # create User/Userz recs for other user
-            assert other_user in live_client.user_names()
+            assert other_user in [_['username'] for _ in live_client.userz_access(oai_obj.oaio_id)]
 
             assert live_client.wipe_user(other_user) == ""
-            assert other_user not in live_client.user_names()
+            assert other_user not in [_['username'] for _ in live_client.userz_access(oai_obj.oaio_id)]
 
         finally:
             if oai_obj:
