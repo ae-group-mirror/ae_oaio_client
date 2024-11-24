@@ -3,4 +3,5 @@ ae_base
 ae_cloud_storage
 ae_oaio_model
 ae_paths
+# ae_core is optional; can be added by an app project; if available then the core/console/gui app logging will be used
 requests
