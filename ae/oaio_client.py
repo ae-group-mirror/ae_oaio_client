@@ -9,28 +9,23 @@ from typing import Optional, Sequence, cast
 
 import requests
 
-from ae.base import (  # type: ignore
+from ae.base import (                                                                                   # type: ignore
     app_name_guess, defuse, os_host_name, os_path_isdir, os_path_isfile, os_path_join, os_path_relpath,
     os_user_name, read_file, write_file,
     ErrorMsgMixin)
 from ae.cloud_storage import CshApiBase, csh_api_class                                                  # type: ignore
-from ae.oaio_model import (  # type: ignore
-    CREATE_ACCESS_RIGHT, DELETE_ACCESS_RIGHT, DELETE_ACTION, FILES_DIR, FILES_VALUES_KEY, MAX_STAMP_DIFF,
-    NO_ACCESS_RIGHT, OBJECTS_DIR,
-    OaioUserIdType, READ_ACCESS_RIGHT, REGISTER_ACTION, ROOT_VALUES_KEY, UPDATE_ACCESS_RIGHT, UPLOAD_ACTION,
-    OLDEST_SYNC_STAMP,
-    OaioCshIdType, OaioMapType, OaioIdType, OaioStampType, OaioValuesType, OaioAccessRightType,
+from ae.oaio_model import (                                                                             # type: ignore
+    CREATE_ACCESS_RIGHT, DELETE_ACTION, FILES_DIR, FILES_VALUES_KEY, MAX_STAMP_DIFF, NO_ACCESS_RIGHT, OBJECTS_DIR,
+    READ_ACCESS_RIGHT, REGISTER_ACTION, ROOT_VALUES_KEY, UPLOAD_ACTION, OLDEST_SYNC_STAMP,
+    OaioCshIdType, OaioMapType, OaioIdType, OaioUserIdType, OaioStampType, OaioValuesType, OaioAccessRightType,
     OaiObject, extra_headers, now_stamp, object_dict, object_id, stamp_diff)
 from ae.paths import Collector, normalize, placeholder_path                                             # type: ignore
 
 
-__version__ = '0.3.8'
+__version__ = '0.3.9'
 
 
 LAST_SYNC_STAMP_FILE = 'last_sync_stamp.txt'    #: file name to store the last synchronization timestamp
-
-ACCESS_ORDER = CREATE_ACCESS_RIGHT + DELETE_ACCESS_RIGHT + UPDATE_ACCESS_RIGHT + READ_ACCESS_RIGHT + NO_ACCESS_RIGHT
-""" obj access right order, to sort the userz returned by :meth:`OaioClient.userz_access` """
 
 
 class OaioClient(ErrorMsgMixin):
@@ -533,8 +528,8 @@ class OaioClient(ErrorMsgMixin):
         :param user_name:       name of the subscribed user.
         :return:                empty string if subscription could be removed without error, else error message.
         """
-        data = {'POid': oaio_id, 'PUid': user_name}
-        res = self._request('post', 'unsubscribe/', json=data)
+        data = {'oaio_id': oaio_id, 'username': user_name, 'access_right': NO_ACCESS_RIGHT}
+        res = self._request('post', 'subscribe/', json=data)
         if not self._res_err(res, f"unsubscribe of {user_name=} and {oaio_id=} failed"):
             if user_name == self.user_name:
                 self._delete_client_object(oaio_id)
@@ -618,17 +613,20 @@ class OaioClient(ErrorMsgMixin):
 
     def upsert_subscription(self, oaio_id: OaioIdType, user_name: OaioUserIdType,
                             access_right: OaioAccessRightType = READ_ACCESS_RIGHT) -> int:
-        """ add new subscriber of an oai object or update extra fields/defaults of an existing user subscription.
+        """ add/delete subscriber of an oai object or update the access right of an existing user subscription.
 
-        :param oaio_id:         id of the oaio to subscribe to.
-        :param user_name:       name of the subscribing user.
-        :param access_right:    user access rights to the subscribed oaio. pass e.g. the value
-                                :data:`~ae.oaio_model.UPDATE_ACCESS_RIGHT` to give the user update rights.
-                                see allowed argument values in the :data:`~ae.oaio_model.ACCESS_RIGHTS` tuple.
+        :param oaio_id:         id of the oaio to subscribe to or to unsubscribe from.
+        :param user_name:       name of the un-/subscribing user.
+        :param access_right:    either :data:`~ae.oaio_model.NO_ACCESS_RIGHT` to unsubscribe user
+                                or a user access right (one of :data:`~ae.oaio_model.ACCESS_RIGHTS`) to subscribe
+                                the oaio specified by :paramref:`~upsert_subscription.oaio_id`
+                                to a user specified by :paramref:`~upsert_subscription.user_name`.
+                                e.g. to grant update rights pass the value :data:`~ae.oaio_model.UPDATE_ACCESS_RIGHT`.
+                                if not specified then the value :data:`~ae.oaio_model.READ_ACCESS_RIGHT` will be used.
         :return:                the primary key integer value (Pubz.Pid) of the added/updated Pubz subscription record
                                 or 0/zero if an error occurred.
         """
-        data = {'POid': oaio_id, 'PUid': user_name, 'access_right': access_right}
+        data = {'oaio_id': oaio_id, 'username': user_name, 'access_right': access_right}
         res = self._request('post', 'subscribe/', json=data)    # json-kwarg implies content-type 'application/json' hdr
         if self._res_err(res, f"subscription of {user_name=} for {oaio_id=} failed"):
             return 0
@@ -650,7 +648,7 @@ class OaioClient(ErrorMsgMixin):
             return []
 
         assert res, "for mypy - not seeing that self._res_err is checking res and returning empty string if not None"
-        return sorted(res.json(), key=lambda _: str(ACCESS_ORDER.index(_['access_right'])) + _['username'])
+        return sorted(res.json(), key=lambda _: _['access_right'] + _['username'])
 
     def wipe_user(self, user_name: OaioUserIdType) -> str:
         """ wipe the specified user including all its objects, subscriptions and log entries.
