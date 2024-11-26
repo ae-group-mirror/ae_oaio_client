@@ -181,7 +181,7 @@ def _mocked_get_or_post_success_response(url: str, **kwargs) -> requests.Respons
     elif act_slug == 'oaio_stampz':
         mock_res.json.return_value = sorted((object_dict(_) for _ in registered_oai_objectz.values()),
                                             key=lambda _: _['client_stamp'])
-    elif act_slug in ('subscribe', 'unsubscribe'):
+    elif act_slug == 'subscribe':
         pid = 369963
         mock_res.json.return_value = {'Pid': pid, 'message': f"Pid:{pid} PUid/POid:{kwargs['json']}"}
     elif act_slug == 'user_subz':
