@@ -464,7 +464,7 @@ class TestOaioClientWithMockedServers:
         upd_stamp = now_stamp()
         upd_val = {'upd_key': 'upd_val'}
 
-        _upd_obj = other_client.update_object(oaio_id, upd_val, stamp=upd_stamp)
+        _upd_obj = other_client.update_object(oaio_id, upd_val, stamp=upd_stamp, reset=True)
 
         syn_obj = other_client.client_objectz[oaio_id]
         assert syn_obj.client_stamp == upd_stamp

@@ -5,6 +5,7 @@ import os
 import shutil
 
 from ast import literal_eval
+from copy import deepcopy
 from typing import Optional, Sequence, cast
 
 import requests
@@ -22,10 +23,13 @@ from ae.oaio_model import (                                                     
 from ae.paths import Collector, normalize, placeholder_path                                             # type: ignore
 
 
-__version__ = '0.3.9'
+__version__ = '0.3.10'
 
 
 LAST_SYNC_STAMP_FILE = 'last_sync_stamp.txt'    #: file name to store the last synchronization timestamp
+
+
+UserzAccessType = list[dict[OaioUserIdType, OaioAccessRightType]]   #: :meth:`OaioClient.userz_access` return value
 
 
 class OaioClient(ErrorMsgMixin):
@@ -166,7 +170,7 @@ class OaioClient(ErrorMsgMixin):
             write_file(os_path_join(client_path, file_path), content, make_dirs=True)
 
         oai_obj.server_stamp = oai_obj.client_stamp
-        oai_obj.server_values = oai_obj.client_values
+        oai_obj.server_values = deepcopy(oai_obj.client_values)
 
         self._save_client_object_info(oai_obj)
 
@@ -351,7 +355,7 @@ class OaioClient(ErrorMsgMixin):
         assert srv_dict.get('oaio_id') == oai_obj.oaio_id, f"{srv_dict.get('oaio_id')=} not matching {oai_obj.oaio_id=}"
 
         oai_obj.server_stamp = oai_obj.client_stamp
-        oai_obj.server_values = oai_obj.client_values
+        oai_obj.server_values = deepcopy(oai_obj.client_values)
 
         self._save_client_object_info(oai_obj)
 
@@ -549,7 +553,7 @@ class OaioClient(ErrorMsgMixin):
         :return:                the updated :class:`~ae.oaio_model.OaiObject` dataclass instance.
         :raises AssertionError: if file to update does not exist.
         """
-        values = self.client_objectz[oaio_id].client_values.copy()
+        values = deepcopy(self.client_objectz[oaio_id].client_values)
         if file_name:
             values[FILES_VALUES_KEY] = [file_name]
         else:
@@ -581,7 +585,7 @@ class OaioClient(ErrorMsgMixin):
         :raises AssertionError: if same file is in add_files and in removed_files,
                                 or if one of the files to update does not exist.
         """
-        values = self.client_objectz[oaio_id].client_values.copy()
+        values = deepcopy(self.client_objectz[oaio_id].client_values)
         if root_path:
             values[ROOT_VALUES_KEY] = placeholder_path(root_path)
 
@@ -590,12 +594,15 @@ class OaioClient(ErrorMsgMixin):
 
         return self.update_object(oaio_id, values, stamp=stamp)
 
-    def update_object(self, oaio_id: OaioIdType, values: OaioValuesType, stamp: OaioStampType = "") -> OaiObject:
+    def update_object(self, oaio_id: OaioIdType, values: OaioValuesType, stamp: OaioStampType = "", reset: bool = False
+                      ) -> OaiObject:
         """ update oaio data object locally.
 
         :param oaio_id:         id of the oaio to update.
-        :param values:          values of the oaio.
+        :param values:          values to update within the oaio.
         :param stamp:           optional timestamp (using :func:`~ae.oaio_model.now_stamp` if not specified).
+        :param reset:           pass True to reset the values before they get updated with the values
+                                specified in :paramref:`~update_object.values`.
         :return:                the updated :class:`~ae.oaio_model.OaiObject` dataclass instance.
         """
         assert stamp > OLDEST_SYNC_STAMP, f"update_object(): got too old stamp {stamp}; <= {OLDEST_SYNC_STAMP}"
@@ -604,7 +611,9 @@ class OaioClient(ErrorMsgMixin):
         upd_stamp = stamp or now_stamp()
 
         oai_obj.client_stamp = upd_stamp
-        oai_obj.client_values = values
+        if reset:
+            oai_obj.client_values.clear()
+        oai_obj.client_values.update(values)
 
         self._save_client_object_info(oai_obj)
         self._auto_sync_check()
@@ -632,16 +641,17 @@ class OaioClient(ErrorMsgMixin):
             return 0
         return res.json().get('Pid', 0)     # type: ignore # self._res_err ensures that res is not None
 
-    def userz_access(self, oaio_id: OaioIdType) -> list[dict[str, str]]:
+    def userz_access(self, oaio_id: OaioIdType) -> UserzAccessType:
         """ determine a list of all the registered users and their access right to the specified oaio.
 
-        :param oaio_id:         oaio id to determine users and access rights for.
-        :return:                list of dicts with username and access_right keys, or empty list on error.
-                                the returned list is sorted by the access_right and username. the constant
-                                :data:`ACCESS_ORDER` specifies the resulting order of the access rights
-                                (create, delete, update, read).
+        :param oaio_id:         id of the oaio determine users and access rights for
+                                or an empty or unregistered oaio id if the oaio is not yet registered.
+        :return:                list of dicts with the keys 'username' and 'access_right', or empty list on error. the
+                                returned list is sorted by the access_right (create, delete, update, read) and username.
+                                if an empty/unregistered oaio id got specified all registered userz will be returned
+                                with the :data:`~ae.oaio_model.NO_ACCESS_RIGHT` access right.
         """
-        res = self._request('get', f'user_subz/{oaio_id}')
+        res = self._request('get', f'user_subz/{oaio_id or "_not__existing__oaio_id_"}')
         warn_msg = self._res_err(res, f"Warning: OaioClient.userz_access() error; {oaio_id=}", add_err=False)
         if warn_msg:
             self.vpo(warn_msg)
