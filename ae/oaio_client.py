@@ -23,7 +23,7 @@ from ae.oaio_model import (                                                     
 from ae.paths import Collector, normalize, placeholder_path                                             # type: ignore
 
 
-__version__ = '0.3.10'
+__version__ = '0.3.11'
 
 
 LAST_SYNC_STAMP_FILE = 'last_sync_stamp.txt'    #: file name to store the last synchronization timestamp
@@ -440,12 +440,15 @@ class OaioClient(ErrorMsgMixin):
         :param csh_id:          cloud storage server id. using default cloud storage server if not specified or empty.
         :return:                new OaiObject instance.
                                 or None if either stamp or oaio_id are already registered (check self.error_message).
+        :raises AssertionError: on invalid argument values/types or if the oaio_id got already registered.
         """
+        assert isinstance(values, dict), f"register_object(): values arg must be a dict; {values=}"    # OaioValuesType
         stamp = stamp or now_stamp()
-        assert stamp > OLDEST_SYNC_STAMP, f"register_object(): got too old {stamp=}; {OLDEST_SYNC_STAMP=}"
+        assert stamp > OLDEST_SYNC_STAMP, f"register_object(): too old {stamp=} specified; <= {OLDEST_SYNC_STAMP=}"
 
         oaio_id = oaio_id or object_id(user_name=self.user_name, device_id=self.device_id, app_id=self.app_id,
                                        stamp=stamp, values=values)
+        assert oaio_id not in self.client_objectz, f"register_object(): {oaio_id=} got already registered"
 
         oai_obj = OaiObject(
             oaio_id=oaio_id,
@@ -598,19 +601,26 @@ class OaioClient(ErrorMsgMixin):
                       ) -> OaiObject:
         """ update oaio data object locally.
 
-        :param oaio_id:         id of the oaio to update.
+        :param oaio_id:         id of a registered oaio to update.
         :param values:          values to update within the oaio.
         :param stamp:           optional timestamp (using :func:`~ae.oaio_model.now_stamp` if not specified).
         :param reset:           pass True to reset the values before they get updated with the values
                                 specified in :paramref:`~update_object.values`.
         :return:                the updated :class:`~ae.oaio_model.OaiObject` dataclass instance.
+        :raises AssertionError: on invalid argument values/types or if the oaio_id did not got registered.
         """
-        assert stamp > OLDEST_SYNC_STAMP, f"update_object(): got too old stamp {stamp}; <= {OLDEST_SYNC_STAMP}"
+        assert oaio_id in self.client_objectz, f"update_object(): oaio object with id '{oaio_id}' not registered"
         oai_obj = self.client_objectz[oaio_id]
-        assert oai_obj.client_stamp, f"update_object(): got oaio '{oaio_id}' with empty client_stamp in {oai_obj}"
-        upd_stamp = stamp or now_stamp()
+        assert oai_obj.client_stamp, f"update_object(): oai object {oaio_id=} has empty client_stamp; {oai_obj=}"
 
-        oai_obj.client_stamp = upd_stamp
+        if stamp:
+            assert stamp > OLDEST_SYNC_STAMP, f"update_object(): too old stamp {stamp} specified; <={OLDEST_SYNC_STAMP}"
+        else:
+            stamp = now_stamp()
+
+        assert stamp > oai_obj.client_stamp, f"update_object(): got too old stamp {stamp}; > {oai_obj.client_stamp}"
+        oai_obj.client_stamp = stamp
+
         if reset:
             oai_obj.client_values.clear()
         oai_obj.client_values.update(values)
