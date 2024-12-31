@@ -23,7 +23,7 @@ from ae.oaio_model import (                                                     
 from ae.paths import Collector, normalize, placeholder_path                                             # type: ignore
 
 
-__version__ = '0.3.11'
+__version__ = '0.3.12'
 
 
 LAST_SYNC_STAMP_FILE = 'last_sync_stamp.txt'    #: file name to store the last synchronization timestamp
