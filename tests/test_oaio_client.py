@@ -191,7 +191,7 @@ def _mocked_get_or_post_success_response(url: str, **kwargs) -> requests.Respons
     elif 'json' in kwargs:
         mock_res.json.return_value = kwargs['json']
     else:                                                   # action slugs: DOWNLOAD_ACTION, 'login', 'logout'
-        mock_res.json.return_value = {'message': f"mocked success for url {url} and kwargs={kwargs}"}
+        mock_res.json.return_value = {'message': f"mocked success for url {url} and {kwargs=}"}
 
     return mock_res
 
@@ -200,7 +200,7 @@ def _mocked_get_or_post_failure_response(url: str, **kwargs) -> requests.Respons
     mock_res = MagicMock()
     mock_res.ok = False
     mock_res.status_code = 489
-    mock_res.json.return_value = {'e_r_r': f"mocked error for url {url} and kwargs={kwargs}"}
+    mock_res.json.return_value = {'e_r_r': f"mocked error for url {url} and {kwargs=}"}
     return mock_res
 
 def user_client(usr_name: str):
@@ -947,7 +947,7 @@ def live_client():
     ocl._csh_api = lambda *_args: liv_api               # monkey patch to prevent Cshz test rec in live server database
 
     assert ocl.error_message == ""
-    assert ocl.synchronize_with_server_if_online(), f"Err={ocl.error_message}"
+    assert ocl.synchronize_with_server_if_online(), f"{ocl.error_message=}"
     local_obj_cache_path = os_path_join(ocl.client_root, OBJECTS_DIR)
 
     # noinspection PyProtectedMember,PyTypeChecker
@@ -970,7 +970,7 @@ class TestIntegrationWithLiveServers:
         assert live_client.error_message == ""
         assert live_client.connected
 
-        assert live_client.synchronize_with_server_if_online(), f"Err={live_client.error_message}"
+        assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
         assert live_client.connected
 
     def test_last_sync_stamp(self, live_client):
@@ -986,7 +986,7 @@ class TestIntegrationWithLiveServers:
         fil_name = 'tst_fil.yyy'
         fil_content = b"test file \x00 binary content \x01\x02\x03\xff"
 
-        assert live_client.synchronize_with_server_if_online(), f"Err={live_client.error_message}"
+        assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
         local_object_count = len(live_client.client_objectz)
 
         try:
@@ -1015,7 +1015,7 @@ class TestIntegrationWithLiveServers:
 
             assert _csh_file_content(live_client, oai_obj) == {fil_name: None}
 
-            assert live_client.synchronize_with_server_if_online(), f"Err={live_client.error_message}"
+            assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
             assert _csh_file_content(live_client, oai_obj) == {fil_name: fil_content}
 
         finally:
@@ -1062,7 +1062,7 @@ class TestIntegrationWithLiveServers:
             assert os_path_isfile(fil_path)
             assert _csh_file_content(live_client, oai_obj) == {fil_name: None}
 
-            assert live_client.synchronize_with_server_if_online(), f"Err={live_client.error_message}"
+            assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
             assert _csh_file_content(live_client, oai_obj) == {fil_name: fil_content}
 
         finally:
@@ -1116,7 +1116,7 @@ class TestIntegrationWithLiveServers:
             assert oaio_id in live_client.client_objectz
             assert live_client.client_objectz[oaio_id] == oai_obj
 
-            assert live_client.synchronize_with_server_if_online(), f"Err={live_client.error_message}"
+            assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
 
             assert live_client.error_message == ""
             oai_obj = live_client.client_objectz.get(oai_obj.oaio_id)
@@ -1171,7 +1171,7 @@ class TestIntegrationWithLiveServers:
             assert oai_obj.oaio_id in live_client.client_objectz
             assert live_client.client_objectz[oai_obj.oaio_id] == oai_obj
 
-            assert live_client.synchronize_with_server_if_online(), f"Err={live_client.error_message}"
+            assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
 
             assert live_client.error_message == ""
             oai_obj = live_client.client_objectz.get(oai_obj.oaio_id)
@@ -1191,11 +1191,11 @@ class TestIntegrationWithLiveServers:
                 assert len(live_client.client_objectz) == local_object_count
 
     def test_synchronize_with_server_if_online(self, live_client):
-        assert live_client.synchronize_with_server_if_online() is True, f"Err={live_client.error_message}"
+        assert live_client.synchronize_with_server_if_online() is True, f"{live_client.error_message=}"
 
     def test_unregister_object(self, live_client):
         oai_obj = live_client.register_object({})
-        assert live_client.synchronize_with_server_if_online(), f"Err={live_client.error_message}"
+        assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
 
         assert oai_obj
         assert oai_obj.oaio_id in live_client._load_server_objectz()
@@ -1211,13 +1211,13 @@ class TestIntegrationWithLiveServers:
 
             # to allow check the subscription of other user and to mock a request, OAIO_USERNAME has to be supervisor
             live_client.user_name = live_client.session.headers[HTTP_HEADER_USR_ID] = other_user
-            assert oai_obj.oaio_id in live_client._load_server_objectz(), f"Err={live_client.error_message}"
+            assert oai_obj.oaio_id in live_client._load_server_objectz(), f"{live_client.error_message=}"
 
         finally:
             if pid:
                 live_client.user_name = live_client.session.headers[HTTP_HEADER_USR_ID] = oai_obj.username
                 assert live_client.unsubscribe(oai_obj.oaio_id, other_user) == ""
-                assert oai_obj.oaio_id in live_client._load_server_objectz(), f"Err={live_client.error_message}"
+                assert oai_obj.oaio_id in live_client._load_server_objectz(), f"{live_client.error_message=}"
 
                 live_client.user_name = live_client.session.headers[HTTP_HEADER_USR_ID] = other_user
                 assert oai_obj.oaio_id not in live_client._load_server_objectz()
@@ -1225,13 +1225,13 @@ class TestIntegrationWithLiveServers:
                 live_client.user_name = live_client.session.headers[HTTP_HEADER_USR_ID] = oai_obj.username
                 assert live_client.unsubscribe(oai_obj.oaio_id, oai_obj.username)   # creator subscription not deletable
                 assert live_client.unregister_object(oai_obj.oaio_id) == ""
-                assert oai_obj.oaio_id not in live_client._load_server_objectz(), f"Err={live_client.error_message}"
+                assert oai_obj.oaio_id not in live_client._load_server_objectz(), f"{live_client.error_message=}"
 
     def test_unsubscribe(self, live_client):
         oai_obj = None
         try:
             oai_obj = live_client.register_object({})
-            assert live_client.synchronize_with_server_if_online(), f"Err={live_client.error_message}"
+            assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
             assert live_client.upsert_subscription(oai_obj.oaio_id, other_user)
 
             assert oai_obj
@@ -1255,7 +1255,7 @@ class TestIntegrationWithLiveServers:
         oai_obj = None
         try:
             oai_obj = live_client.register_object({})
-            assert live_client.synchronize_with_server_if_online(), f"Err={live_client.error_message}"
+            assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
             assert oai_obj
             assert oai_obj.oaio_id in live_client._load_server_objectz()
             assert oai_obj.oaio_id in live_client.client_objectz
@@ -1280,7 +1280,7 @@ class TestIntegrationWithLiveServers:
         local_object_count = len(live_client.client_objectz)
         reg_obj = live_client.register_file(fil_name, file_content=b"", stamp=reg_stamp)
         oaio_id = reg_obj.oaio_id
-        assert live_client.synchronize_with_server_if_online(), f"Err={live_client.error_message}"
+        assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
 
         upd_stamp = now_stamp()
         oai_obj = live_client.update_file(oaio_id, file_name=fil_name, file_content=fil_content, stamp=upd_stamp)
@@ -1306,7 +1306,7 @@ class TestIntegrationWithLiveServers:
 
         assert _csh_file_content(live_client, oai_obj) == {fil_name: None}
 
-        assert live_client.synchronize_with_server_if_online(), f"Err={live_client.error_message}"
+        assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
 
         assert _csh_file_content(live_client, oai_obj) == {fil_name: fil_content}
 
@@ -1330,7 +1330,7 @@ class TestIntegrationWithLiveServers:
         for fil_nam in file_paths:
             write_file(os_path_join(folder_path, fil_nam), fil_content + fil_nam.encode(), make_dirs=True)
         reg_obj = live_client.register_folder(folder_path, stamp=reg_stamp)
-        assert live_client.synchronize_with_server_if_online(), f"Err={live_client.error_message}"
+        assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
 
         upd_stamp = now_stamp()
         for fil_nam in file_paths:
@@ -1359,7 +1359,7 @@ class TestIntegrationWithLiveServers:
         assert oaio_id in live_client.client_objectz
         assert live_client.client_objectz[oaio_id] == oai_obj
 
-        assert live_client.synchronize_with_server_if_online(), f"Err={live_client.error_message}"
+        assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
 
         assert live_client.error_message == ""
         oai_obj = live_client.client_objectz.get(oai_obj.oaio_id)
@@ -1414,7 +1414,7 @@ class TestIntegrationWithLiveServers:
         assert oai_obj.oaio_id in live_client.client_objectz
         assert live_client.client_objectz[oai_obj.oaio_id] == oai_obj
 
-        assert live_client.synchronize_with_server_if_online(), f"Err={live_client.error_message}"
+        assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
 
         assert live_client.error_message == ""
         oai_obj = live_client.client_objectz.get(oai_obj.oaio_id)
@@ -1437,7 +1437,7 @@ class TestIntegrationWithLiveServers:
         pid = 0
         try:
             oai_obj = live_client.register_object({})
-            assert live_client.synchronize_with_server_if_online(), f"Err={live_client.error_message}"
+            assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
 
             assert oai_obj
             assert oai_obj.oaio_id in live_client._load_server_objectz()
@@ -1451,7 +1451,7 @@ class TestIntegrationWithLiveServers:
 
             # to allow check the subscription of other user and to mock a request, OAIO_USERNAME has to be supervisor
             live_client.user_name = live_client.session.headers[HTTP_HEADER_USR_ID] = other_user
-            assert oai_obj.oaio_id in live_client._load_server_objectz(), f"Err={live_client.error_message}"
+            assert oai_obj.oaio_id in live_client._load_server_objectz(), f"{live_client.error_message=}"
 
         finally:
             if pid:
@@ -1472,7 +1472,7 @@ class TestIntegrationWithLiveServers:
         oai_obj = None
         try:
             oai_obj = live_client.register_object({})
-            assert live_client.synchronize_with_server_if_online(), f"Err={live_client.error_message}"
+            assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
             assert live_client.upsert_subscription(oai_obj.oaio_id, other_user)  # create User/Userz recs for other user
             assert other_user in [_['username'] for _ in live_client.userz_access(oai_obj.oaio_id)]
 
