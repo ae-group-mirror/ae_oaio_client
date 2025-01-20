@@ -1,5 +1,13 @@
-""" Our Asynchronously Interchangeable Objects Client
+"""
+Our Asynchronously Interchangeable Objects Client
+=================================================
 
+this portion is providing a client interface to manage asynchronously interchangeable oai objectz.
+
+each oai object has a user definable values dictionary and can optionally have a file or folder attached to it.
+
+an instance of the here implemented class :class:`~ae.oaio_client.OaioClient`, represents a client interface
+to the oaio server, a django server :ref:`available as git repository <https://gitlab.com/ae-group/oaio_server>`.
 """
 import os
 import shutil
@@ -23,7 +31,7 @@ from ae.oaio_model import (                                                     
 from ae.paths import Collector, normalize, placeholder_path                                             # type: ignore
 
 
-__version__ = '0.3.12'
+__version__ = '0.3.13'
 
 
 LAST_SYNC_STAMP_FILE = 'last_sync_stamp.txt'    #: file name to store the last synchronization timestamp
@@ -42,7 +50,6 @@ class OaioClient(ErrorMsgMixin):
                  app_id: str = "",
                  device_id: str = "",
                  csh_default_id: OaioCshIdType = 'Digi',
-                 auto_sync: float = 360.9,
                  client_root: str = "{ado}/oaio_root/",
                  ):
         """ initialize a new client instance to connect to the oaio server.
@@ -58,8 +65,6 @@ class OaioClient(ErrorMsgMixin):
                                 defaults to :func:`~ae.base.os_host_name`.
         :param csh_default_id:  id for the default cloud storage server to use.
                                 defaults to 'Digi'.
-        :param auto_sync:       time in seconds to sync with oaio server on every object registering or update.
-                                defaults to 360 seconds. pass zero/0 in order to disable auto synchronization.
         :param client_root:     path to the folder on the local device where the oaio info and files gets cached.
                                 defaults to the placeholder path "{ado}/oaio_root/".
         """
@@ -74,7 +79,6 @@ class OaioClient(ErrorMsgMixin):
         self.app_id = app_id or self.cae and self.cae.app_name or app_name_guess()
         self.device_id = device_id or os_host_name()
         self.csh_default_id = csh_default_id
-        self.auto_sync_seconds = auto_sync
         self.client_root = normalize(client_root)
 
         self.session = requests.Session()
@@ -91,11 +95,6 @@ class OaioClient(ErrorMsgMixin):
             self._request('post', 'logout/')
         if self.session:
             self.session.close()
-
-    def _auto_sync_check(self):
-        """ check if synchronization with servers should be done. """
-        if self.auto_sync_seconds and stamp_diff(self.last_sync_stamp, now_stamp()) > self.auto_sync_seconds:
-            self.synchronize_with_server_if_online()
 
     def _client_file_root(self, oaio_id: OaioIdType, values: OaioValuesType) -> str:
         """ determine the path on client/device where the file(s) attached to an oaio get stored.
@@ -198,7 +197,7 @@ class OaioClient(ErrorMsgMixin):
 
         file_path = os_path_join(self.client_root, LAST_SYNC_STAMP_FILE)        # add file with old self.last_sync_stamp
         if not os_path_isfile(file_path):                                       # to ensure sync on first app start
-            write_file(file_path, OLDEST_SYNC_STAMP)                            # (difference > self.auto_sync_seconds)
+            write_file(file_path, OLDEST_SYNC_STAMP)
 
     def _load_client_object_info(self, oaio_id: OaioIdType, info_path: str = "") -> OaiObject:
         """ load actual client/local oaio info of the oaio specified by its id. """
@@ -248,6 +247,7 @@ class OaioClient(ErrorMsgMixin):
                 server_stamp = res.json().get('current_stamp')
                 if abs(stamp_diff(client_stamp, server_stamp)) > MAX_STAMP_DIFF:
                     self.error_message = f"clocks are out of sync; {client_stamp=} {server_stamp=}"
+                    self.connected = False
                     return False
                 return True
 
@@ -256,11 +256,10 @@ class OaioClient(ErrorMsgMixin):
 
         if not self.connected:
             res = self._request('post', 'login/', _in_chk=True, json=self.credentials)
-            if self._res_err(res, f"user '{self.user_name}' authentication error"):
-                return False
-            self.connected = True
+            if not self._res_err(res, f"user '{self.user_name}' authentication error"):
+                self.connected = True
 
-        return True
+        return self.connected
 
     def _request(self, method: str, slug: str, _in_chk: bool = False, **request_kwargs
                  ) -> Optional[requests.Response]:
@@ -274,6 +273,7 @@ class OaioClient(ErrorMsgMixin):
         :return:                http response, or None if connection cannot be established (offline, authentication, ..)
                                 or if any other error occurred (check self.error_message for details).
         """
+        res = None
         url = self.base_url + slug
         try:
             if not _in_chk and not self._reconnect_check():
@@ -294,6 +294,7 @@ class OaioClient(ErrorMsgMixin):
 
             met = getattr(self.session, method)
             res = met(url, **request_kwargs)
+            assert res, f"session {method=} call with {request_kwargs=} returned unexpected empty repsonse {res=}"
             res.raise_for_status()
             self.error_message = ""
             return res
@@ -301,7 +302,7 @@ class OaioClient(ErrorMsgMixin):
         except (requests.HTTPError, requests.ConnectionError, Exception) as exc:
             if 'json' in request_kwargs and 'password' in request_kwargs['json']:   # hide password if in request_kwargs
                 request_kwargs['json']['password'] = request_kwargs['json']['password'][:2] + "*" * 9
-            self.error_message = f"{method}-request {exc=}; {url=} {_in_chk=} {request_kwargs=}"
+            self._res_err(res, f"{method=} {exc=} {url=} {_in_chk=} {request_kwargs=}")
 
         return None
 
@@ -356,7 +357,6 @@ class OaioClient(ErrorMsgMixin):
 
         oai_obj.server_stamp = oai_obj.client_stamp
         oai_obj.server_values = deepcopy(oai_obj.client_values)
-
         self._save_client_object_info(oai_obj)
 
         return True
@@ -458,11 +458,13 @@ class OaioClient(ErrorMsgMixin):
             username=self.user_name,
             device_id=self.device_id,
             app_id=self.app_id,
-            csh_access_right=CREATE_ACCESS_RIGHT,  # registering owner has always all access rights
+            csh_access_right=CREATE_ACCESS_RIGHT,   # registering owner has always all access rights
         )
 
-        self._save_client_object_info(oai_obj)
-        self._auto_sync_check()
+        self._save_client_object_info(oai_obj)      # store new obj in local OBJECTS_DIR
+
+        if not self.synchronize_with_server_if_online():
+            return None
 
         return oai_obj
 
@@ -482,7 +484,7 @@ class OaioClient(ErrorMsgMixin):
 
         for cob in sorted(coz.values(), key=lambda _: _.client_stamp):
             if cob.client_stamp > cob.server_stamp:             # or cob.server_stamp == ''
-                error = not self._upload_object(cob) or error   # self._upload_object() put self.error_message on error
+                error = not self._upload_object(cob) or error   # _upload_object() extends self.error_message on error
 
         newer = [_ for _ in soz.values() if coz.get(_.oaio_id, OaiObject(_.oaio_id)).client_stamp < _.client_stamp]
         for sob in sorted(newer, key=lambda _: _.client_stamp):
@@ -524,7 +526,7 @@ class OaioClient(ErrorMsgMixin):
                     if os_path_isdir(client_path):
                         shutil.rmtree(client_path)
 
-            self._auto_sync_check()
+            self.synchronize_with_server_if_online()
 
         return self.error_message
 
@@ -607,7 +609,7 @@ class OaioClient(ErrorMsgMixin):
         :param reset:           pass True to reset the values before they get updated with the values
                                 specified in :paramref:`~update_object.values`.
         :return:                the updated :class:`~ae.oaio_model.OaiObject` dataclass instance.
-        :raises AssertionError: on invalid argument values/types or if the oaio_id did not got registered.
+        :raises AssertionError: on invalid argument values/types or if the oaio_id did not get registered.
         """
         assert oaio_id in self.client_objectz, f"update_object(): oaio object with id '{oaio_id}' not registered"
         oai_obj = self.client_objectz[oaio_id]
@@ -626,7 +628,7 @@ class OaioClient(ErrorMsgMixin):
         oai_obj.client_values.update(values)
 
         self._save_client_object_info(oai_obj)
-        self._auto_sync_check()
+        self.synchronize_with_server_if_online()
 
         return oai_obj
 

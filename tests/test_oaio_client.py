@@ -32,14 +32,13 @@ class TestInstantiation:
 
         try:
             ocl = OaioClient("hOsT", cre_args, app_id='app_id', device_id='dev_id', csh_default_id='csh_id',
-                             auto_sync=369.12, client_root=loc_path)
+                             client_root=loc_path)
 
             assert "hOsT" in ocl.base_url
             assert ocl.credentials == cre_args
             assert ocl.app_id == 'app_id'
             assert ocl.device_id == 'dev_id'
             assert ocl.csh_default_id == 'csh_id'
-            assert ocl.auto_sync_seconds == 369.12
             assert ocl.client_root == normalize(loc_path)
 
             assert os_path_isdir(os_path_join(loc_path, OBJECTS_DIR))
@@ -212,6 +211,7 @@ def user_client(usr_name: str):
 
     referred and mocked `response` instance attributes and methods: ok, status_code, json(), raise_for_status()
     """
+    root_path = os_path_join(TESTS_FOLDER, f'tst_rut_{usr_name}')
     with patch('ae.oaio_client.requests') as mock_req:
         mock_ses_cls = MagicMock()
         mock_req.Session = mock_ses_cls
@@ -219,13 +219,14 @@ def user_client(usr_name: str):
         mock_ses_ins.get.side_effect = _mocked_get_or_post_success_response
         mock_ses_ins.post.side_effect = _mocked_get_or_post_success_response
 
-        root_path = os_path_join(TESTS_FOLDER, f'tst_rut_{usr_name}')
         ocl = OaioClient('any_host:8769', {'username': usr_name, 'password': 'any_password'},
                          app_id='aId', device_id='dId',
                          csh_default_id=CSH_API_ID,  # -> mocked class CshMockApi in this module
-                         auto_sync=0,  # disable auto sync for testing
                          client_root=root_path,
                          )
+        ocl.o_synchronize_with_server_if_online = ocl.synchronize_with_server_if_online
+        ocl.synchronize_with_server_if_online = lambda: True  # monkey patch to allow manual server sync in tests
+
         assert ocl.error_message == ""
         assert os_path_isdir(root_path)
 
@@ -268,7 +269,7 @@ class TestOaioClientWithMockedServers:
         fil_name = 'tst_fil.xxx'
         fil_content = b"test file \x00 binary content \x01\x02\x03\xff"
 
-        assert mocked_client.synchronize_with_server_if_online()
+        assert mocked_client.o_synchronize_with_server_if_online()
         local_object_count = len(mocked_client.client_objectz)
 
         try:
@@ -295,7 +296,7 @@ class TestOaioClientWithMockedServers:
             assert oaio_id in mocked_client.client_objectz
             assert mocked_client.client_objectz[oaio_id] == oai_obj
 
-            assert mocked_client.synchronize_with_server_if_online()
+            assert mocked_client.o_synchronize_with_server_if_online()
             assert _csh_file_content(mocked_client, oai_obj) == {fil_name: fil_content}
 
         finally:
@@ -315,7 +316,7 @@ class TestOaioClientWithMockedServers:
         fil_path = os_path_join(dir_path, fil_name)
         fil_content = b"test file \x00 having binary content \x01\x02\x03\xff"
 
-        assert mocked_client.synchronize_with_server_if_online()
+        assert mocked_client.o_synchronize_with_server_if_online()
         local_object_count = len(mocked_client.client_objectz)
 
         try:
@@ -343,7 +344,7 @@ class TestOaioClientWithMockedServers:
 
             assert os_path_isfile(fil_path)
 
-            assert mocked_client.synchronize_with_server_if_online()
+            assert mocked_client.o_synchronize_with_server_if_online()
             assert _csh_file_content(mocked_client, oai_obj) == {fil_name: fil_content}
 
         finally:
@@ -366,7 +367,7 @@ class TestOaioClientWithMockedServers:
                       ]
         fil_content = b"test file \x00 binary content \x01\x02\x03\xff"
 
-        assert mocked_client.synchronize_with_server_if_online()
+        assert mocked_client.o_synchronize_with_server_if_online()
         local_object_count = len(mocked_client.client_objectz)
         csh_api = mocked_client._csh_api(mocked_client.csh_default_id)
         oaio_id = ""
@@ -400,7 +401,7 @@ class TestOaioClientWithMockedServers:
             assert oaio_id in mocked_client.client_objectz
             assert mocked_client.client_objectz[oaio_id] == oai_obj
 
-            assert mocked_client.synchronize_with_server_if_online()
+            assert mocked_client.o_synchronize_with_server_if_online()
             for fil_nam in file_paths:
                 assert csh_api.deployed_file_content(os_path_join(svr_path, fil_nam)) == fil_content + fil_nam.encode()
 
@@ -416,7 +417,7 @@ class TestOaioClientWithMockedServers:
         oai_obj = None
         try:
             oai_obj = mocked_client.register_object({})
-            assert mocked_client.synchronize_with_server_if_online()
+            assert mocked_client.o_synchronize_with_server_if_online()
 
             assert not mocked_client.error_message
             assert oai_obj
@@ -442,14 +443,14 @@ class TestOaioClientWithMockedServers:
                 assert not os_path_isfile(os_path_join(mocked_client.client_root, OBJECTS_DIR, oai_obj.oaio_id))
 
     def test_synchronize_with_server_if_online(self, mocked_client):
-        assert mocked_client.synchronize_with_server_if_online() is True
+        assert mocked_client.o_synchronize_with_server_if_online() is True
 
     def test_synchronize_with_server_if_online_with_2nd_usr(self, mocked_client, other_client):
         reg_stamp = now_stamp()
         reg_val = {'reg_key': 'reg_val'}
 
         oai_obj = mocked_client.register_object(reg_val, stamp=reg_stamp)
-        assert oai_obj and mocked_client.synchronize_with_server_if_online()
+        assert oai_obj and mocked_client.o_synchronize_with_server_if_online()
         oaio_id = oai_obj.oaio_id
 
         syn_obj = mocked_client.client_objectz[oaio_id]
@@ -460,7 +461,7 @@ class TestOaioClientWithMockedServers:
         assert syn_obj == mocked_client._load_client_object_info(oaio_id)
 
         assert mocked_client.upsert_subscription(oaio_id, other_client.user_name)
-        assert other_client.synchronize_with_server_if_online()
+        assert other_client.o_synchronize_with_server_if_online()
         upd_stamp = now_stamp()
         upd_val = {'upd_key': 'upd_val'}
 
@@ -473,7 +474,7 @@ class TestOaioClientWithMockedServers:
         assert syn_obj.server_values == reg_val
         assert syn_obj == other_client._load_client_object_info(oaio_id)
 
-        assert other_client.synchronize_with_server_if_online()   # 2nd user uploading updated values to server
+        assert other_client.o_synchronize_with_server_if_online()   # 2nd user uploading updated values to server
 
         syn_obj = other_client.client_objectz[oaio_id]
         assert syn_obj.client_stamp == upd_stamp
@@ -482,7 +483,7 @@ class TestOaioClientWithMockedServers:
         assert syn_obj.server_values == upd_val
         assert syn_obj == other_client._load_client_object_info(oaio_id)
 
-        assert mocked_client.synchronize_with_server_if_online()  # registering creator get update done by other_client
+        assert mocked_client.o_synchronize_with_server_if_online()  # registering creator updated by other_client
 
         syn_obj = mocked_client.client_objectz[oaio_id]
         assert syn_obj.client_stamp == upd_stamp
@@ -497,7 +498,7 @@ class TestOaioClientWithMockedServers:
         reg_content = b"register content of tst_syn_with_file"
 
         oai_obj = mocked_client.register_file(reg_name, file_content=reg_content, stamp=reg_stamp)
-        assert oai_obj and mocked_client.synchronize_with_server_if_online()
+        assert oai_obj and mocked_client.o_synchronize_with_server_if_online()
         oaio_id = oai_obj.oaio_id
         reg_val = oai_obj.client_values
         fil_root = os_path_join(mocked_client.client_root, FILES_DIR, oaio_id)
@@ -513,7 +514,7 @@ class TestOaioClientWithMockedServers:
         assert read_file(os_path_join(fil_root, reg_name), extra_mode='b') == reg_content
 
         assert mocked_client.upsert_subscription(oaio_id, other_client.user_name)
-        assert other_client.synchronize_with_server_if_online()
+        assert other_client.o_synchronize_with_server_if_online()
         upd_stamp = now_stamp()
         upd_name = 'upd_syn_file.name'
         upd_content = b"updated synFileContent"
@@ -532,7 +533,7 @@ class TestOaioClientWithMockedServers:
         # noinspection PyTypeChecker
         assert read_file(os_path_join(oth_root, upd_name), extra_mode='b') == upd_content
 
-        assert other_client.synchronize_with_server_if_online()
+        assert other_client.o_synchronize_with_server_if_online()
 
         syn_obj = other_client.client_objectz[oaio_id]
         assert syn_obj.client_stamp == upd_stamp
@@ -543,7 +544,7 @@ class TestOaioClientWithMockedServers:
         # noinspection PyTypeChecker
         assert read_file(os_path_join(oth_root, upd_name), extra_mode='b') == upd_content
 
-        assert mocked_client.synchronize_with_server_if_online()
+        assert mocked_client.o_synchronize_with_server_if_online()
 
         syn_obj = mocked_client.client_objectz[oaio_id]
         assert syn_obj.client_stamp == upd_stamp
@@ -558,7 +559,7 @@ class TestOaioClientWithMockedServers:
         oai_obj = mocked_client.register_object({})
         assert oai_obj
         assert oai_obj.oaio_id in mocked_client.client_objectz
-        assert mocked_client.synchronize_with_server_if_online()
+        assert mocked_client.o_synchronize_with_server_if_online()
 
         assert mocked_client.unregister_object(oai_obj.oaio_id) == ""
 
@@ -578,7 +579,7 @@ class TestOaioClientWithMockedServers:
     def test_unregister_object_file_wipe(self, mocked_client):
         reg_name = 'tst_unregister_wiped_file.txt'
         oai_obj = mocked_client.register_file(reg_name, file_content=b"unregister wipe err test file content")
-        assert mocked_client.synchronize_with_server_if_online()
+        assert mocked_client.o_synchronize_with_server_if_online()
 
         err_msg = mocked_client.unregister_object(oai_obj.oaio_id, wipe_files=True)
 
@@ -592,7 +593,7 @@ class TestOaioClientWithMockedServers:
     def test_unregister_object_file_wipe_err(self, mocked_client):
         reg_name = 'tst_unregister_wiped_file.txt'
         oai_obj = mocked_client.register_file(reg_name, file_content=b"unregister wipe err test file content")
-        assert mocked_client.synchronize_with_server_if_online()
+        assert mocked_client.o_synchronize_with_server_if_online()
         assert _csh_file_remove(mocked_client, oai_obj) == ""  # force error by removing file from the cloud storage
         assert _csh_mock_cleared_errors() == ""
 
@@ -611,7 +612,7 @@ class TestOaioClientWithMockedServers:
 
     def test_unregister_server_err(self, mocked_client):
         oai_obj = mocked_client.register_object({})
-        assert mocked_client.synchronize_with_server_if_online()
+        assert mocked_client.o_synchronize_with_server_if_online()
         mocked_client.session.post.side_effect = _mocked_get_or_post_failure_response
 
         err_msg = mocked_client.unregister_object(oai_obj.oaio_id)
@@ -666,14 +667,14 @@ class TestOaioClientWithMockedServers:
             oai_obj = mocked_client.register_file(fil_name, root_path=dir_path, stamp=reg_stamp)
             assert mocked_client.error_message == ""
             assert oai_obj is not None
-            assert mocked_client.synchronize_with_server_if_online()
+            assert mocked_client.o_synchronize_with_server_if_online()
             assert _csh_file_content(mocked_client, oai_obj) == {fil_name: b""}
 
             write_file(fil_path, fil_content)
             upd_stamp = now_stamp()
 
             oai_obj = mocked_client.update_file(oai_obj.oaio_id, stamp=upd_stamp)
-            assert mocked_client.synchronize_with_server_if_online()
+            assert mocked_client.o_synchronize_with_server_if_online()
 
             assert ROOT_VALUES_KEY in oai_obj.client_values
             assert normalize(oai_obj.client_values[ROOT_VALUES_KEY]) == dir_path
@@ -714,7 +715,7 @@ class TestOaioClientWithMockedServers:
             oai_obj = mocked_client.register_file(reg_name, root_path=reg_root, stamp=reg_stamp)
             assert mocked_client.error_message == ""
             assert oai_obj is not None
-            assert mocked_client.synchronize_with_server_if_online()
+            assert mocked_client.o_synchronize_with_server_if_online()
             assert _csh_file_content(mocked_client, oai_obj) == {reg_name: b""}
             oaio_id = oai_obj.oaio_id
 
@@ -722,7 +723,7 @@ class TestOaioClientWithMockedServers:
             upd_stamp = now_stamp()
 
             oai_obj = mocked_client.update_file(oaio_id, file_name=upd_name, root_path=upd_root, stamp=upd_stamp)
-            assert mocked_client.synchronize_with_server_if_online()
+            assert mocked_client.o_synchronize_with_server_if_online()
 
             assert ROOT_VALUES_KEY in oai_obj.client_values
             assert oai_obj.client_values[ROOT_VALUES_KEY] == upd_root
@@ -763,7 +764,7 @@ class TestOaioClientWithMockedServers:
                       ]
         fil_content = b"update folder test file \x00 binary content \x01\x02\x03\xff"
 
-        assert mocked_client.synchronize_with_server_if_online()
+        assert mocked_client.o_synchronize_with_server_if_online()
         local_object_count = len(mocked_client.client_objectz)
         csh_api = mocked_client._csh_api(mocked_client.csh_default_id)
         oai_obj = None
@@ -774,7 +775,7 @@ class TestOaioClientWithMockedServers:
             for dir_nam in sub_dirs:
                 os.makedirs(os_path_join(root_path, dir_nam))
             oai_obj = mocked_client.register_folder(root_path, stamp=reg_stamp)
-            assert mocked_client.synchronize_with_server_if_online()
+            assert mocked_client.o_synchronize_with_server_if_online()
             assert mocked_client.error_message == ""
             assert len(mocked_client.client_objectz[oai_obj.oaio_id].client_values[FILES_VALUES_KEY]) == 0
             oaio_id = oai_obj.oaio_id
@@ -798,7 +799,7 @@ class TestOaioClientWithMockedServers:
             assert oai_obj.server_stamp == reg_stamp
             assert oai_obj.server_values.get(FILES_VALUES_KEY) == []
 
-            assert mocked_client.synchronize_with_server_if_online()
+            assert mocked_client.o_synchronize_with_server_if_online()
 
             assert mocked_client.error_message == ""
             assert oai_obj.oaio_id in mocked_client.client_objectz
@@ -825,7 +826,7 @@ class TestOaioClientWithMockedServers:
         try:
             reg_stamp = now_stamp()
             oai_obj = mocked_client.register_object({'val_key': 'reg_val'}, stamp=reg_stamp)
-            assert mocked_client.synchronize_with_server_if_online()
+            assert mocked_client.o_synchronize_with_server_if_online()
             upd_stamp = now_stamp()
 
             mocked_client.update_object(oai_obj.oaio_id, {'val_key': 'upd_val'}, stamp=upd_stamp)
@@ -937,9 +938,10 @@ def live_client():
                      app_id='aIi',
                      device_id='dIi',
                      csh_default_id='_TstCshLive',      # actually not needed because _csh_api() get monkey patched
-                     auto_sync=0,                       # disable auto sync in all tests
                      client_root=client_root,
                      )
+    ocl.o_synchronize_with_server_if_online = ocl.synchronize_with_server_if_online
+    ocl.synchronize_with_server_if_online = lambda: True  # monkey patch to allow manual server sync in tests
 
     liv_api = DigiApi(root_folder='tst_liv_rut',        # TEST_DIGI_ROOT_FOLDER_PATH exclusive to test_cloud_storage.py
                       email=os.environ.get('TEST_DIGI_API_EMAIL'),
@@ -947,7 +949,6 @@ def live_client():
     ocl._csh_api = lambda *_args: liv_api               # monkey patch to prevent Cshz test rec in live server database
 
     assert ocl.error_message == ""
-    assert ocl.synchronize_with_server_if_online(), f"{ocl.error_message=}"
     local_obj_cache_path = os_path_join(ocl.client_root, OBJECTS_DIR)
 
     # noinspection PyProtectedMember,PyTypeChecker
@@ -970,7 +971,7 @@ class TestIntegrationWithLiveServers:
         assert live_client.error_message == ""
         assert live_client.connected
 
-        assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
+        assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
         assert live_client.connected
 
     def test_last_sync_stamp(self, live_client):
@@ -986,7 +987,7 @@ class TestIntegrationWithLiveServers:
         fil_name = 'tst_fil.yyy'
         fil_content = b"test file \x00 binary content \x01\x02\x03\xff"
 
-        assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
+        assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
         local_object_count = len(live_client.client_objectz)
 
         try:
@@ -1015,7 +1016,7 @@ class TestIntegrationWithLiveServers:
 
             assert _csh_file_content(live_client, oai_obj) == {fil_name: None}
 
-            assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
+            assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
             assert _csh_file_content(live_client, oai_obj) == {fil_name: fil_content}
 
         finally:
@@ -1062,7 +1063,7 @@ class TestIntegrationWithLiveServers:
             assert os_path_isfile(fil_path)
             assert _csh_file_content(live_client, oai_obj) == {fil_name: None}
 
-            assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
+            assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
             assert _csh_file_content(live_client, oai_obj) == {fil_name: fil_content}
 
         finally:
@@ -1116,7 +1117,7 @@ class TestIntegrationWithLiveServers:
             assert oaio_id in live_client.client_objectz
             assert live_client.client_objectz[oaio_id] == oai_obj
 
-            assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
+            assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
 
             assert live_client.error_message == ""
             oai_obj = live_client.client_objectz.get(oai_obj.oaio_id)
@@ -1171,7 +1172,7 @@ class TestIntegrationWithLiveServers:
             assert oai_obj.oaio_id in live_client.client_objectz
             assert live_client.client_objectz[oai_obj.oaio_id] == oai_obj
 
-            assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
+            assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
 
             assert live_client.error_message == ""
             oai_obj = live_client.client_objectz.get(oai_obj.oaio_id)
@@ -1191,11 +1192,11 @@ class TestIntegrationWithLiveServers:
                 assert len(live_client.client_objectz) == local_object_count
 
     def test_synchronize_with_server_if_online(self, live_client):
-        assert live_client.synchronize_with_server_if_online() is True, f"{live_client.error_message=}"
+        assert live_client.o_synchronize_with_server_if_online() is True, f"{live_client.error_message=}"
 
     def test_unregister_object(self, live_client):
         oai_obj = live_client.register_object({})
-        assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
+        assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
 
         assert oai_obj
         assert oai_obj.oaio_id in live_client._load_server_objectz()
@@ -1231,7 +1232,7 @@ class TestIntegrationWithLiveServers:
         oai_obj = None
         try:
             oai_obj = live_client.register_object({})
-            assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
+            assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
             assert live_client.upsert_subscription(oai_obj.oaio_id, other_user)
 
             assert oai_obj
@@ -1255,7 +1256,7 @@ class TestIntegrationWithLiveServers:
         oai_obj = None
         try:
             oai_obj = live_client.register_object({})
-            assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
+            assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
             assert oai_obj
             assert oai_obj.oaio_id in live_client._load_server_objectz()
             assert oai_obj.oaio_id in live_client.client_objectz
@@ -1280,7 +1281,7 @@ class TestIntegrationWithLiveServers:
         local_object_count = len(live_client.client_objectz)
         reg_obj = live_client.register_file(fil_name, file_content=b"", stamp=reg_stamp)
         oaio_id = reg_obj.oaio_id
-        assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
+        assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
 
         upd_stamp = now_stamp()
         oai_obj = live_client.update_file(oaio_id, file_name=fil_name, file_content=fil_content, stamp=upd_stamp)
@@ -1306,7 +1307,7 @@ class TestIntegrationWithLiveServers:
 
         assert _csh_file_content(live_client, oai_obj) == {fil_name: None}
 
-        assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
+        assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
 
         assert _csh_file_content(live_client, oai_obj) == {fil_name: fil_content}
 
@@ -1330,7 +1331,7 @@ class TestIntegrationWithLiveServers:
         for fil_nam in file_paths:
             write_file(os_path_join(folder_path, fil_nam), fil_content + fil_nam.encode(), make_dirs=True)
         reg_obj = live_client.register_folder(folder_path, stamp=reg_stamp)
-        assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
+        assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
 
         upd_stamp = now_stamp()
         for fil_nam in file_paths:
@@ -1359,7 +1360,7 @@ class TestIntegrationWithLiveServers:
         assert oaio_id in live_client.client_objectz
         assert live_client.client_objectz[oaio_id] == oai_obj
 
-        assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
+        assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
 
         assert live_client.error_message == ""
         oai_obj = live_client.client_objectz.get(oai_obj.oaio_id)
@@ -1414,7 +1415,7 @@ class TestIntegrationWithLiveServers:
         assert oai_obj.oaio_id in live_client.client_objectz
         assert live_client.client_objectz[oai_obj.oaio_id] == oai_obj
 
-        assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
+        assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
 
         assert live_client.error_message == ""
         oai_obj = live_client.client_objectz.get(oai_obj.oaio_id)
@@ -1437,7 +1438,7 @@ class TestIntegrationWithLiveServers:
         pid = 0
         try:
             oai_obj = live_client.register_object({})
-            assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
+            assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
 
             assert oai_obj
             assert oai_obj.oaio_id in live_client._load_server_objectz()
@@ -1472,7 +1473,7 @@ class TestIntegrationWithLiveServers:
         oai_obj = None
         try:
             oai_obj = live_client.register_object({})
-            assert live_client.synchronize_with_server_if_online(), f"{live_client.error_message=}"
+            assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
             assert live_client.upsert_subscription(oai_obj.oaio_id, other_user)  # create User/Userz recs for other user
             assert other_user in [_['username'] for _ in live_client.userz_access(oai_obj.oaio_id)]
 
