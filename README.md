@@ -1,16 +1,16 @@
 <!-- THIS FILE IS EXCLUSIVELY MAINTAINED by the project ae.ae V0.3.95 -->
 <!-- THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.tpl_namespace_root V0.3.14 -->
-# oaio_client 0.3.13
+# oaio_client 0.3.14
 
 [![GitLab develop](https://img.shields.io/gitlab/pipeline/ae-group/ae_oaio_client/develop?logo=python)](
     https://gitlab.com/ae-group/ae_oaio_client)
 [![LatestPyPIrelease](
-    https://img.shields.io/gitlab/pipeline/ae-group/ae_oaio_client/release0.3.12?logo=python)](
-    https://gitlab.com/ae-group/ae_oaio_client/-/tree/release0.3.12)
+    https://img.shields.io/gitlab/pipeline/ae-group/ae_oaio_client/release0.3.13?logo=python)](
+    https://gitlab.com/ae-group/ae_oaio_client/-/tree/release0.3.13)
 [![PyPIVersions](https://img.shields.io/pypi/v/ae_oaio_client)](
     https://pypi.org/project/ae-oaio-client/#history)
 
->ae_oaio_client module 0.3.13.
+>ae_oaio_client module 0.3.14.
 
 [![Coverage](https://ae-group.gitlab.io/ae_oaio_client/coverage.svg)](
     https://ae-group.gitlab.io/ae_oaio_client/coverage/index.html)

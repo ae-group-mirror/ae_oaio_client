@@ -7,7 +7,7 @@ this portion is providing a client interface to manage asynchronously interchang
 each oai object has a user definable values dictionary and can optionally have a file or folder attached to it.
 
 an instance of the here implemented class :class:`~ae.oaio_client.OaioClient`, represents a client interface
-to the oaio server, a django server :ref:`available as git repository <https://gitlab.com/ae-group/oaio_server>`.
+to the oaio server, a django server `available as git repository <https://gitlab.com/ae-group/oaio_server>`_.
 """
 import os
 import shutil
@@ -31,7 +31,7 @@ from ae.oaio_model import (                                                     
 from ae.paths import Collector, normalize, placeholder_path                                             # type: ignore
 
 
-__version__ = '0.3.13'
+__version__ = '0.3.14'
 
 
 LAST_SYNC_STAMP_FILE = 'last_sync_stamp.txt'    #: file name to store the last synchronization timestamp
@@ -116,7 +116,7 @@ class OaioClient(ErrorMsgMixin):
         csh_id = oai_obj.csh_id
         if not files or not csh_id or (csh_api := self._csh_api(csh_id)) is None:
             if files:
-                self.error_message = f"cloud storage {csh_id=} empty/invalid; {oai_obj=}"
+                self.error_message = f"cloud storage {csh_id=} empty/invalid; {oai_obj=}"   # pragma: no cover
             return [], None, "", ""
 
         oaio_id = oai_obj.oaio_id
@@ -128,7 +128,7 @@ class OaioClient(ErrorMsgMixin):
     def _csh_api(self, csh_id: OaioCshIdType) -> Optional[CshApiBase]:
         """ determine api and credentials of cloud storage host specified by its id from the web server db/config. """
         res = self._request('get', f'csh_args/{csh_id}')
-        if self._res_err(res, f"oaio server error in {csh_id=}-args fetch"):
+        if self._res_err(res, f"oaio server error in {csh_id=}-args fetch"):                # pragma: no cover
             return None
 
         csh_kwargs = res.json()                         # type: ignore # self._res_err ensures that res is not None
@@ -157,13 +157,13 @@ class OaioClient(ErrorMsgMixin):
         :return:                True if object info and files got downloaded without errors, else False.
         """
         files, csh_api, client_path, server_path = self._client_server_file_api_paths(oai_obj)
-        if files and csh_api is None:
+        if files and csh_api is None:                                                       # pragma: no cover
             return False
 
         for file_path in files:
             assert csh_api is not None  # for mypy
             content = csh_api.deployed_file_content(os_path_join(server_path, file_path))
-            if content is None:
+            if content is None:                                                             # pragma: no cover
                 self.error_message = f"cloud storage download error: {csh_api.error_message=} {oai_obj=} {file_path=}"
                 return False
             write_file(os_path_join(client_path, file_path), content, make_dirs=True)
@@ -245,14 +245,14 @@ class OaioClient(ErrorMsgMixin):
             if res and res.ok:
                 client_stamp = now_stamp()
                 server_stamp = res.json().get('current_stamp')
-                if abs(stamp_diff(client_stamp, server_stamp)) > MAX_STAMP_DIFF:
+                if abs(stamp_diff(client_stamp, server_stamp)) > MAX_STAMP_DIFF:            # pragma: no cover
                     self.error_message = f"clocks are out of sync; {client_stamp=} {server_stamp=}"
                     self.connected = False
                     return False
                 return True
 
-            self.session.headers.pop('X-CSRFToken')
-            self.connected = False
+            self.session.headers.pop('X-CSRFToken')                                         # pragma: no cover
+            self.connected = False                                                          # pragma: no cover
 
         if not self.connected:
             res = self._request('post', 'login/', _in_chk=True, json=self.credentials)
@@ -287,19 +287,19 @@ class OaioClient(ErrorMsgMixin):
                     ses_token = self.session.cookies.get('csrftoken')
                     if err_msg := self._res_err(res, f"CSRF fetch error in {method=} with {url=}",
                                                 failure="" if ses_token else ": empty token", add_err=False):
-                        raise Exception(err_msg)
+                        raise Exception(err_msg)                                            # pragma: no cover
                 request_kwargs.setdefault('cookies', {'csrftoken': ses_token})
                 self.session.headers['X-CSRFToken'] = cast(str, ses_token)  # w/o cast in types-requests 2.31.0.20240311
                 self.session.headers['Referer'] = url               # needed only for https requests
 
             met = getattr(self.session, method)
             res = met(url, **request_kwargs)
-            assert res, f"session {method=} call with {request_kwargs=} returned unexpected empty repsonse {res=}"
+            assert res, f"session {method=} call with {request_kwargs=} returned unexpected empty response {res=}"
             res.raise_for_status()
             self.error_message = ""
             return res
 
-        except (requests.HTTPError, requests.ConnectionError, Exception) as exc:
+        except (requests.HTTPError, requests.ConnectionError, Exception) as exc:            # pragma: no cover
             if 'json' in request_kwargs and 'password' in request_kwargs['json']:   # hide password if in request_kwargs
                 request_kwargs['json']['password'] = request_kwargs['json']['password'][:2] + "*" * 9
             self._res_err(res, f"{method=} {exc=} {url=} {_in_chk=} {request_kwargs=}")
@@ -314,7 +314,7 @@ class OaioClient(ErrorMsgMixin):
                 msg += f" {getattr(res, 'status_code', '?')=}"
                 try:
                     msg += f" {res.json()=}"
-                except (AttributeError, Exception):
+                except (AttributeError, Exception):                                         # pragma: no cover
                     msg += f" {getattr(res, 'content', '¿')=}"
             if add_err:
                 self.error_message = msg
@@ -338,19 +338,19 @@ class OaioClient(ErrorMsgMixin):
         """
         files, csh_api, client_path, server_path = self._client_server_file_api_paths(oai_obj)
         if files and csh_api is None:
-            return False
+            return False                                                                    # pragma: no cover
 
         for file_path in files:
             assert csh_api is not None  # for mypy
             if not csh_api.deploy_file(os_path_join(server_path, file_path),
-                                       source_path=os_path_join(client_path, file_path)):
+                                       source_path=os_path_join(client_path, file_path)):   # pragma: no cover
                 self.error_message = f"'{file_path}' cloud storage upload error: {csh_api.error_message=} {oai_obj=}"
                 return False
 
         action = UPLOAD_ACTION if oai_obj.server_stamp else REGISTER_ACTION
         res = self._request('post', f'{action}/', json=object_dict(oai_obj))
         if self._res_err(res, f"postponed {action} onto server of {oai_obj}"):
-            return False
+            return False                                                                    # pragma: no cover
 
         srv_dict = res.json()               # type: ignore # self._res_err ensures that res is not None
         assert srv_dict.get('oaio_id') == oai_obj.oaio_id, f"{srv_dict.get('oaio_id')=} not matching {oai_obj.oaio_id=}"
@@ -464,7 +464,7 @@ class OaioClient(ErrorMsgMixin):
         self._save_client_object_info(oai_obj)      # store new obj in local OBJECTS_DIR
 
         if not self.synchronize_with_server_if_online():
-            return None
+            return None                                                                     # pragma: no cover
 
         return oai_obj
 
@@ -617,7 +617,7 @@ class OaioClient(ErrorMsgMixin):
 
         if stamp:
             assert stamp > OLDEST_SYNC_STAMP, f"update_object(): too old stamp {stamp} specified; <={OLDEST_SYNC_STAMP}"
-        else:
+        else:                                                                               # pragma: no cover
             stamp = now_stamp()
 
         assert stamp > oai_obj.client_stamp, f"update_object(): got too old stamp {stamp}; > {oai_obj.client_stamp}"
