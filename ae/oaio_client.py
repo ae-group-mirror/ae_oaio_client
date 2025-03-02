@@ -31,7 +31,7 @@ from ae.oaio_model import (                                                     
 from ae.paths import Collector, normalize, placeholder_path                                             # type: ignore
 
 
-__version__ = '0.3.14'
+__version__ = '0.3.15'
 
 
 LAST_SYNC_STAMP_FILE = 'last_sync_stamp.txt'    #: file name to store the last synchronization timestamp
@@ -50,7 +50,7 @@ class OaioClient(ErrorMsgMixin):
                  app_id: str = "",
                  device_id: str = "",
                  csh_default_id: OaioCshIdType = 'Digi',
-                 client_root: str = "{ado}/oaio_root/",
+                 client_root: str = "{usr}/oaio_root/",
                  ):
         """ initialize a new client instance to connect to the oaio server.
 
@@ -66,7 +66,7 @@ class OaioClient(ErrorMsgMixin):
         :param csh_default_id:  id for the default cloud storage server to use.
                                 defaults to 'Digi'.
         :param client_root:     path to the folder on the local device where the oaio info and files gets cached.
-                                defaults to the placeholder path "{ado}/oaio_root/".
+                                defaults to the placeholder path "{usr}/oaio_root/".
         """
         assert defuse(app_id) == app_id, f"{app_id=} contains invalid characters {set(defuse(app_id)) - set(app_id)=}"
         assert defuse(device_id) == device_id, f"invalid chr {set(defuse(device_id)) - set(device_id)=} in {device_id=}"

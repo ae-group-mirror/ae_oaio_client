@@ -56,7 +56,7 @@ class TestInstantiation:
         assert ocl.app_id == app_name_guess()
         assert ocl.device_id == os_host_name()
         assert ocl.csh_default_id == 'Digi'
-        assert ocl.client_root == normalize("{ado}/oaio_root/")
+        assert ocl.client_root == normalize("{usr}/oaio_root/")
 
     def test_invalid_host_instantiation_args(self):
         ocl = OaioClient("", {})
