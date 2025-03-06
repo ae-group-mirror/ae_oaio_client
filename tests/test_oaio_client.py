@@ -8,7 +8,7 @@ import pytest
 import requests
 
 from ae.base import (
-    TESTS_FOLDER, app_name_guess, load_dotenvs, os_host_name, os_path_abspath, os_path_dirname, os_path_isdir,
+    TESTS_FOLDER, app_name_guess, load_dotenvs, os_device_id, os_path_abspath, os_path_dirname, os_path_isdir,
     os_path_isfile, os_path_join, os_user_name, read_file, write_file)
 from ae.cloud_storage import CshApiBase, DigiApi
 from ae.oaio_model import (
@@ -54,7 +54,7 @@ class TestInstantiation:
 
         assert ocl.user_name == os_user_name()
         assert ocl.app_id == app_name_guess()
-        assert ocl.device_id == os_host_name()
+        assert ocl.device_id == os_device_id
         assert ocl.csh_default_id == 'Digi'
         assert ocl.client_root == normalize("{usr}/oaio_root/")
 
