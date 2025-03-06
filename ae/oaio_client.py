@@ -19,7 +19,7 @@ from typing import Optional, Sequence, cast
 import requests
 
 from ae.base import (                                                                                   # type: ignore
-    app_name_guess, defuse, os_host_name, os_path_isdir, os_path_isfile, os_path_join, os_path_relpath,
+    app_name_guess, defuse, os_device_id, os_path_isdir, os_path_isfile, os_path_join, os_path_relpath,
     os_user_name, read_file, write_file,
     ErrorMsgMixin)
 from ae.cloud_storage import CshApiBase, csh_api_class                                                  # type: ignore
@@ -31,7 +31,7 @@ from ae.oaio_model import (                                                     
 from ae.paths import Collector, normalize, placeholder_path                                             # type: ignore
 
 
-__version__ = '0.3.15'
+__version__ = '0.3.16'
 
 
 LAST_SYNC_STAMP_FILE = 'last_sync_stamp.txt'    #: file name to store the last synchronization timestamp
@@ -62,7 +62,7 @@ class OaioClient(ErrorMsgMixin):
                                 got included in project) or (if not set) to the return value of the
                                 function :func:`~ae.base.app_name_guess`.
         :param device_id:       id of the client device.
-                                defaults to :func:`~ae.base.os_host_name`.
+                                defaults to :data:`~ae.base.os_device_id`.
         :param csh_default_id:  id for the default cloud storage server to use.
                                 defaults to 'Digi'.
         :param client_root:     path to the folder on the local device where the oaio info and files gets cached.
@@ -77,7 +77,7 @@ class OaioClient(ErrorMsgMixin):
         self.credentials = credentials
         self.user_name = credentials.get('username') or os_user_name()
         self.app_id = app_id or self.cae and self.cae.app_name or app_name_guess()
-        self.device_id = device_id or os_host_name()
+        self.device_id = device_id or os_device_id
         self.csh_default_id = csh_default_id
         self.client_root = normalize(client_root)
 
