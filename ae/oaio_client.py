@@ -19,19 +19,20 @@ from typing import Optional, Sequence, cast
 import requests
 
 from ae.base import (                                                                                   # type: ignore
-    app_name_guess, defuse, os_device_id, os_path_isdir, os_path_isfile, os_path_join, os_path_relpath,
+    app_name_guess, defuse, mask_secrets, os_device_id, os_path_isdir, os_path_isfile, os_path_join, os_path_relpath,
     os_user_name, read_file, write_file,
     ErrorMsgMixin)
 from ae.cloud_storage import CshApiBase, csh_api_class                                                  # type: ignore
 from ae.oaio_model import (                                                                             # type: ignore
     CREATE_ACCESS_RIGHT, DELETE_ACTION, FILES_DIR, FILES_VALUES_KEY, MAX_STAMP_DIFF, NO_ACCESS_RIGHT, OBJECTS_DIR,
-    READ_ACCESS_RIGHT, REGISTER_ACTION, ROOT_VALUES_KEY, UPLOAD_ACTION, OLDEST_SYNC_STAMP,
-    OaioCshIdType, OaioMapType, OaioIdType, OaioUserIdType, OaioStampType, OaioValuesType, OaioAccessRightType,
-    OaiObject, extra_headers, now_stamp, object_dict, object_id, stamp_diff)
-from ae.paths import Collector, normalize, placeholder_path                                             # type: ignore
+    OLDEST_SYNC_STAMP, READ_ACCESS_RIGHT, REGISTER_ACTION, ROOT_VALUES_KEY, UPLOAD_ACTION,
+    context_encode, now_stamp, object_dict, object_id, stamp_diff,
+    OaioAccessRightType, OaioCshIdType, OaioIdType, OaioMapType, OaiObject, OaioStampType, OaioUserIdType,
+    OaioValuesType)
+from ae.paths import normalize, placeholder_path, Collector                                             # type: ignore
 
 
-__version__ = '0.3.16'
+__version__ = '0.3.17'
 
 
 LAST_SYNC_STAMP_FILE = 'last_sync_stamp.txt'    #: file name to store the last synchronization timestamp
@@ -40,7 +41,7 @@ LAST_SYNC_STAMP_FILE = 'last_sync_stamp.txt'    #: file name to store the last s
 UserzAccessType = list[dict[OaioUserIdType, OaioAccessRightType]]   #: :meth:`OaioClient.userz_access` return value
 
 
-class OaioClient(ErrorMsgMixin):
+class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-attributes
     """ interface to manage creations, updates and deletions of oaio objects of a user.
 
     .. note:: after creating an instance the :meth:`.synchronize` method has to be called at least once.
@@ -51,7 +52,7 @@ class OaioClient(ErrorMsgMixin):
                  device_id: str = "",
                  csh_default_id: OaioCshIdType = 'Digi',
                  client_root: str = "{usr}/oaio_root/",
-                 ):
+                 ):                         # pylint: disable=too-many-arguments, too-many-positional-arguments
         """ initialize a new client instance to connect to the oaio server.
 
         :param host:            oaio server host name/address and optional port number.
@@ -82,7 +83,7 @@ class OaioClient(ErrorMsgMixin):
         self.client_root = normalize(client_root)
 
         self.session = requests.Session()
-        self.session.headers.update(extra_headers(self.user_name, self.device_id, self.app_id))
+        self.session.headers.update(context_encode(self.user_name, self.device_id, self.app_id))
         self.connected = False
 
         self._init_client_folders()
@@ -149,6 +150,18 @@ class OaioClient(ErrorMsgMixin):
 
         self.error_message = f"delete client object integrity error: {path=} {oaio_id=} {oai_obj=}"
         return False
+
+    def _delete_server_object(self, oai_obj: OaiObject) -> bool:
+        """ delete oaio object from oaio server.
+
+        :param oai_obj:         :class:`~ae.oaio_model.OaiObject` dataclass instance of the object to delete.
+                                (the oaio server view ObjectzDataView only uses the oaio_id field).
+        :return:                True if the specified object got deleted from the server,
+                                else False (check self.error_message for details).
+        """
+        # noinspection PyTypeChecker
+        res = self._request('post', f'{DELETE_ACTION}/', json=object_dict(oai_obj))     # PyCharm inspection Bug
+        return self._res_err(res, f"object delete/unregister to server failed; {oai_obj=}") == ""
 
     def _download_object(self, oai_obj: OaiObject) -> bool:
         """ save oaio info and download optional attached files to local device/cache.
@@ -287,7 +300,7 @@ class OaioClient(ErrorMsgMixin):
                     ses_token = self.session.cookies.get('csrftoken')
                     if err_msg := self._res_err(res, f"CSRF fetch error in {method=} with {url=}",
                                                 failure="" if ses_token else ": empty token", add_err=False):
-                        raise Exception(err_msg)                                            # pragma: no cover
+                        raise Exception(err_msg)        # pylint: disable=broad-exception-raised # pragma: no cover
                 request_kwargs.setdefault('cookies', {'csrftoken': ses_token})
                 self.session.headers['X-CSRFToken'] = cast(str, ses_token)  # w/o cast in types-requests 2.31.0.20240311
                 self.session.headers['Referer'] = url               # needed only for https requests
@@ -299,27 +312,29 @@ class OaioClient(ErrorMsgMixin):
             self.error_message = ""
             return res
 
-        except (requests.HTTPError, requests.ConnectionError, Exception) as exc:            # pragma: no cover
-            if 'json' in request_kwargs and 'password' in request_kwargs['json']:   # hide password if in request_kwargs
-                request_kwargs['json']['password'] = request_kwargs['json']['password'][:2] + "*" * 9
-            self._res_err(res, f"{method=} {exc=} {url=} {_in_chk=} {request_kwargs=}")
+        # pylint: disable-next=broad-exception-caught # pragma: no cover
+        except (requests.HTTPError, requests.ConnectionError, AssertionError, Exception) as exception:
+            self._res_err(res, f"{method=} {exception=} {url=} {_in_chk=} {mask_secrets(request_kwargs)=}")
 
         return None
 
     def _res_err(self, res: Optional[requests.Response], msg: str, failure: str = "", add_err: bool = True) -> str:
         """ web request response error checker, amending error message with status-code. """
-        if not res or not res.ok or failure:
-            msg += f"{failure};"
-            if res:
-                msg += f" {getattr(res, 'status_code', '?')=}"
-                try:
-                    msg += f" {res.json()=}"
-                except (AttributeError, Exception):                                         # pragma: no cover
-                    msg += f" {getattr(res, 'content', '¿')=}"
-            if add_err:
-                self.error_message = msg
-            return msg
-        return ""
+        if res and res.ok and not failure:
+            return ""
+
+        msg += f"{failure};"
+        if res:
+            msg += f" {getattr(res, 'status_code', '?')=}"
+            try:
+                msg += f" {res.json()=}"
+            except (AttributeError, Exception):         # pylint: disable=broad-exception-caught # pragma: no cover
+                msg += f" {getattr(res, 'content', '¿')=}"
+
+        if add_err:
+            self.error_message = msg
+
+        return msg
 
     def _save_client_object_info(self, oai_obj: OaiObject):
         """ save oaio to local oaio info. """
@@ -380,8 +395,9 @@ class OaioClient(ErrorMsgMixin):
         write_file(os_path_join(self.client_root, LAST_SYNC_STAMP_FILE), stamp)
         self._last_sync_stamp = stamp
 
-    def register_file(self, file_name: str, file_content: Optional[bytes] = None, root_path: str = "",
-                      stamp: OaioStampType = "", csh_id: OaioCshIdType = "") -> Optional[OaiObject]:
+    def register_file(self, file_name: str,     # pylint: disable=too-many-arguments, too-many-positional-arguments
+                      file_content: Optional[bytes] = None, root_path: str = "", stamp: OaioStampType = "",
+                      csh_id: OaioCshIdType = "") -> Optional[OaiObject]:
         """ register new oaio file object.
 
         :param file_name:       name of the new file object to register.
@@ -507,12 +523,9 @@ class OaioClient(ErrorMsgMixin):
             self.error_message = f"client object to delete/unregister with id '{oaio_id}' not found"
             return self.error_message
 
-        registered = oai_obj.server_stamp
-        if registered:                          # if registered on server
-            # noinspection PyTypeChecker
-            res = self._request('post', f'{DELETE_ACTION}/', json=object_dict(oai_obj))     # PyCharm inspection Bug
-            if self._res_err(res, f"object delete/unregister to server failed; {oai_obj=}"):
-                return self.error_message
+        registered = oai_obj.server_stamp                           # if registered on server
+        if registered and not self._delete_server_object(oai_obj):  # check and return errors on deleting server object
+            return self.error_message
 
         if self._delete_client_object(oaio_id):
             if wipe_files:
@@ -545,8 +558,9 @@ class OaioClient(ErrorMsgMixin):
 
         return self.error_message
 
-    def update_file(self, oaio_id: OaioIdType, file_name: str = "", file_content: Optional[bytes] = None,
-                    root_path: str = "", stamp: OaioStampType = "") -> OaiObject:
+    def update_file(self, oaio_id: OaioIdType,  # pylint: disable=too-many-arguments, too-many-positional-arguments
+                    file_name: str = "", file_content: Optional[bytes] = None, root_path: str = "",
+                    stamp: OaioStampType = "") -> OaiObject:
         """ update oai file object locally.
 
         :param oaio_id:         id of the oai file object to update.
