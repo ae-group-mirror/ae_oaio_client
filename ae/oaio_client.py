@@ -4,7 +4,7 @@ Our Asynchronously Interchangeable Objects Client
 
 this portion is providing a client interface to manage asynchronously interchangeable oai objectz.
 
-each oai object has a user definable values dictionary and can optionally have a file or folder attached to it.
+each oai object has a user-definable values dictionary and can optionally have a file or folder attached to it.
 
 an instance of the here implemented class :class:`~ae.oaio_client.OaioClient`, represents a client interface
 to the oaio server, a django server `available as git repository <https://gitlab.com/ae-group/oaio_server>`_.
@@ -32,7 +32,7 @@ from ae.oaio_model import (                                                     
 from ae.paths import normalize, placeholder_path, Collector                                             # type: ignore
 
 
-__version__ = '0.3.17'
+__version__ = '0.3.18'
 
 
 LAST_SYNC_STAMP_FILE = 'last_sync_stamp.txt'    #: file name to store the last synchronization timestamp
@@ -44,7 +44,7 @@ UserzAccessType = list[dict[OaioUserIdType, OaioAccessRightType]]   #: :meth:`Oa
 class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-attributes
     """ interface to manage creations, updates and deletions of oaio objects of a user.
 
-    .. note:: after creating an instance the :meth:`.synchronize` method has to be called at least once.
+    .. note:: after creating an instance, the :meth:`.synchronize` method has to be called at least once.
 
     """
     def __init__(self, host: str, credentials: dict[str, str],
@@ -59,14 +59,14 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         :param credentials:     oaio server user identification credentials kwargs (dict with the keys
                                 'username' and 'password').
         :param app_id:          optional id/name of the app from where the client is connecting from.
-                                defaults to :attr:`~ae.core.AppBase.app_name` attribute value (if :mod:`ae.core`
-                                got included in project) or (if not set) to the return value of the
+                                defaults to :attr:`~ae.core.AppBase.app_name` attribute value (if the :mod:`ae.core`
+                                portion/module got included in the project) or (if not set) to the return value of the
                                 function :func:`~ae.base.app_name_guess`.
         :param device_id:       id of the client device.
                                 defaults to :data:`~ae.base.os_device_id`.
         :param csh_default_id:  id for the default cloud storage server to use.
                                 defaults to 'Digi'.
-        :param client_root:     path to the folder on the local device where the oaio info and files gets cached.
+        :param client_root:     path to the folder on the local device where the oaio info and files get cached.
                                 defaults to the placeholder path "{usr}/oaio_root/".
         """
         assert defuse(app_id) == app_id, f"{app_id=} contains invalid characters {set(defuse(app_id)) - set(app_id)=}"
@@ -98,7 +98,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
             self.session.close()
 
     def _client_file_root(self, oaio_id: OaioIdType, values: OaioValuesType) -> str:
-        """ determine the path on client/device where the file(s) attached to an oaio get stored.
+        """ determine the path on the client/device where the file(s) attached to an oaio get stored.
 
         :param oaio_id:         id of the oaio.
         :param values:          oaio values (client_values if upload else server_values).
@@ -111,7 +111,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         return root_folder
 
     def _client_server_file_api_paths(self, oai_obj: OaiObject) -> tuple[list[str], Optional[CshApiBase], str, str]:
-        """ get attached files, the cloud storage api id, and the files root paths on client and cloud storage host. """
+        """ get attached files, the cloud storage api id, and the file root paths on client and cloud storage host. """
         values = oai_obj.client_values
         files = values.get(FILES_VALUES_KEY, [])
         csh_id = oai_obj.csh_id
@@ -127,7 +127,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         return files, csh_api, client_path, server_path
 
     def _csh_api(self, csh_id: OaioCshIdType) -> Optional[CshApiBase]:
-        """ determine api and credentials of cloud storage host specified by its id from the web server db/config. """
+        """ determine api and credentials of a cloud storage host specified by its id from the web server db/config. """
         res = self._request('get', f'csh_args/{csh_id}')
         if self._res_err(res, f"oaio server error in {csh_id=}-args fetch"):                # pragma: no cover
             return None
@@ -137,10 +137,10 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         return api_class(**csh_kwargs)
 
     def _delete_client_object(self, oaio_id: OaioIdType) -> bool:
-        """ delete object locally on client from file system and client_objectz dict.
+        """ delete an object locally on the client from the file system and client_objectz dict.
 
         :param oaio_id:         id of the oaio.
-        :return:                True if oaio got deleted successfully locally on client, else False.
+        :return:                True if oaio got deleted successfully locally on the client, else False.
         """
         path = os_path_join(self.client_root, OBJECTS_DIR, oaio_id)
         oai_obj = self.client_objectz.pop(oaio_id, None)
@@ -152,7 +152,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         return False
 
     def _delete_server_object(self, oai_obj: OaiObject) -> bool:
-        """ delete oaio object from oaio server.
+        """ delete oaio object from the oaio server.
 
         :param oai_obj:         :class:`~ae.oaio_model.OaiObject` dataclass instance of the object to delete.
                                 (the oaio server view ObjectzDataView only uses the oaio_id field).
@@ -164,7 +164,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         return self._res_err(res, f"object delete/unregister to server failed; {oai_obj=}") == ""
 
     def _download_object(self, oai_obj: OaiObject) -> bool:
-        """ save oaio info and download optional attached files to local device/cache.
+        """ save oaio info and download optional attached files to the local device/cache.
 
         :param oai_obj:         :class:`~ae.oaio_model.OaiObject` dataclass instance.
         :return:                True if object info and files got downloaded without errors, else False.
@@ -195,7 +195,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         :return:                list of file names (relative to the root/folder_path and without any path placeholders).
         """
         coll = Collector(main_app_name=self.app_id)
-        coll.collect(folder_path, append=("**/*", "**/.*"), only_first_of=())
+        coll.collect(folder_path, append=("**/*", "**/.*"))
         return [os_path_relpath(_, folder_path) for _ in coll.files]
 
     def _init_client_folders(self):
@@ -208,8 +208,8 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         if not os_path_isdir(file_path):
             os.makedirs(file_path)
 
-        file_path = os_path_join(self.client_root, LAST_SYNC_STAMP_FILE)        # add file with old self.last_sync_stamp
-        if not os_path_isfile(file_path):                                       # to ensure sync on first app start
+        file_path = os_path_join(self.client_root, LAST_SYNC_STAMP_FILE)        # add with old self.last_sync_stamp
+        if not os_path_isfile(file_path):                                       # to ensure sync on the first app start
             write_file(file_path, OLDEST_SYNC_STAMP)
 
     def _load_client_object_info(self, oaio_id: OaioIdType, info_path: str = "") -> OaiObject:
@@ -221,7 +221,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
     def _load_client_objectz(self) -> OaioMapType:
         """ load actual client/local oaio infos of all local oai objects.
 
-        :return:                mapping object with objectz stored on the local device.
+        :return:                mapping/dict with objectz stored on the local device.
         """
         objectz = {}
         info_path = os_path_join(self.client_root, OBJECTS_DIR)
@@ -233,7 +233,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
     def _load_server_objectz(self) -> OaioMapType:
         """ get from server all newly added and changed objectz of all the subscriptions of the current user.
 
-        :return:                mapping object with objectz subscribed by the user from oaio server.
+        :return:                mapping/dict with objectz subscribed by the user from oaio server.
                                 if the client is offline an empty mapping object.
         """
         objectz = {}
@@ -246,11 +246,11 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         return objectz
 
     def _reconnect_check(self) -> bool:
-        """ check if server got already connected and (re)connect if not.
+        """ check if the server got already connected and (re)connect if not.
 
-        :return                 True if still connected or successfully reconnected
+        :return:                a boolean True value if still connected or successfully reconnected
                                 or False if offline, connection cannot be established, CSRF token not available or on
-                                any other server login failure/error; in these cases check the message in the property
+                                any other server failure/error; in these cases check the message in the property
                                 :attr:`~OaioClient.error_message` (inherited from :class:`~ae.base.ErrorMsgMixin`).
         """
         if self.connected:
@@ -345,11 +345,11 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         write_file(os_path_join(self.client_root, OBJECTS_DIR, oaio_id), repr(object_dict(oai_obj)))
 
     def _upload_object(self, oai_obj: OaiObject) -> bool:
-        """ save local/client object and try to send changes to storage and oaio/web servers.
+        """ save the specified local/client object and try to send changes to storage and oaio/web servers.
 
         :param oai_obj:         :class:`~ae.oaio_model.OaiObject` dataclass instance to update/upload/register.
         :return:                True if register/upload went well or False on failure or if servers are offline (for
-                                details check the error_message attribute of this instance)..
+                                details check the error_message attribute of this instance).
         """
         files, csh_api, client_path, server_path = self._client_server_file_api_paths(oai_obj)
         if files and csh_api is None:
@@ -398,20 +398,20 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
     def register_file(self, file_name: str,     # pylint: disable=too-many-arguments, too-many-positional-arguments
                       file_content: Optional[bytes] = None, root_path: str = "", stamp: OaioStampType = "",
                       csh_id: OaioCshIdType = "") -> Optional[OaiObject]:
-        """ register new oaio file object.
+        """ register a new oaio file object.
 
         :param file_name:       name of the new file object to register.
-        :param file_content:    file content if file not exists, pass bytes array to create the file.
+        :param file_content:    file content if the file does not exist on any file system, pass as bytes to create it.
         :param root_path:       root path on local-machine of the new file object to register.
                                 using :attr:`.client_root` if not specified.
         :param stamp:           optional timestamp (created by :func:`~ae.oaio_model.now_stamp` if not specified).
-        :param csh_id:          cloud storage server id or empty string to use default cloud storage server.
+        :param csh_id:          cloud storage server id or empty string to use the default cloud storage server.
         :return:                new OaiObject instance
                                 or None if either stamp or oaio_id are already registered (check self.error_message).
-        :raises AssertionError: if file to register does not exist.
+        :raises AssertionError: if the file to register does not exist.
         """
         stamp = stamp or now_stamp()
-        values = {FILES_VALUES_KEY: [file_name]}
+        values: OaioValuesType = {FILES_VALUES_KEY: [file_name]}
         if root_path:
             values[ROOT_VALUES_KEY] = placeholder_path(root_path)
             oaio_id = ''
@@ -431,14 +431,14 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
 
     def register_folder(self, root_path: str, stamp: OaioStampType = "",
                         csh_id: OaioCshIdType = "") -> Optional[OaiObject]:
-        """ register new oaio folder object.
+        """ register a new oaio folder object.
 
         :param root_path:       root path on the local-machine/client of the new folder object to register.
         :param stamp:           optional timestamp (created by :func:`~ae.oaio_model.now_stamp` if not specified).
-        :param csh_id:          cloud storage server id or empty string to use default cloud storage server.
+        :param csh_id:          cloud storage server id or empty string to use the default cloud storage server.
         :return:                new OaiObject instance
                                 or None if either stamp or oaio_id are already registered (check self.error_message).
-        :raises AssertionError: if files to register does not exist.
+        :raises AssertionError: if files to register do not exist.
         """
         root_path = normalize(root_path)
         values = {ROOT_VALUES_KEY: placeholder_path(root_path),
@@ -448,12 +448,12 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
 
     def register_object(self, values: OaioValuesType, stamp: OaioStampType = '',
                         oaio_id: OaioIdType = '', csh_id: OaioCshIdType = '') -> Optional[OaiObject]:
-        """ register new oaio data object.
+        """ register a new oaio data object.
 
         :param values:          values data to register as a new oaio object.
         :param stamp:           optional timestamp (created by :func:`~ae.oaio_model.now_stamp` if not specified).
         :param oaio_id:         object id (will be created if not passed).
-        :param csh_id:          cloud storage server id. using default cloud storage server if not specified or empty.
+        :param csh_id:          cloud storage server id. if empty/unspecified, use the default cloud storage server.
         :return:                new OaiObject instance.
                                 or None if either stamp or oaio_id are already registered (check self.error_message).
         :raises AssertionError: on invalid argument values/types or if the oaio_id got already registered.
@@ -468,13 +468,13 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
 
         oai_obj = OaiObject(
             oaio_id=oaio_id,
-            client_stamp=stamp,                     # could be changed by server on upload if conflicts with other stamp
+            client_stamp=stamp,                 # could be changed by server on upload if conflicts with another stamp
             client_values=values,
             csh_id=csh_id or self.csh_default_id,
             username=self.user_name,
             device_id=self.device_id,
             app_id=self.app_id,
-            csh_access_right=CREATE_ACCESS_RIGHT,   # registering owner has always all access rights
+            csh_access_right=CREATE_ACCESS_RIGHT,   # registering owner always has all access rights
         )
 
         self._save_client_object_info(oai_obj)      # store new obj in local OBJECTS_DIR
@@ -487,7 +487,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
     def synchronize_with_server_if_online(self) -> bool:
         """ synchronize local changes to server and any update/changes done on other clients from server to this client.
 
-        .. hint:: if not connected to the oaio server then this method tries first to (re-)connect.
+        .. hint:: if not connected to the oaio server, then this method tries first to (re-)connect.
 
         :return:                False if the client is offline or on sync error, else True.
         """
@@ -524,7 +524,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
             return self.error_message
 
         registered = oai_obj.server_stamp                           # if registered on server
-        if registered and not self._delete_server_object(oai_obj):  # check and return errors on deleting server object
+        if registered and not self._delete_server_object(oai_obj):  # check and return errors on server object deletion
             return self.error_message
 
         if self._delete_client_object(oaio_id):
@@ -544,7 +544,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         return self.error_message
 
     def unsubscribe(self, oaio_id: OaioIdType, user_name: OaioUserIdType) -> str:
-        """ remove subscription of an oai object for a user.
+        """ remove the subscription of an oai object for a user.
 
         :param oaio_id:         id of the oaio to unsubscribe.
         :param user_name:       name of the subscribed user.
@@ -564,13 +564,13 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         """ update oai file object locally.
 
         :param oaio_id:         id of the oai file object to update.
-        :param file_name:       name (optionally with subdirectories path) of the attached file.
-        :param file_content:    file content if file name not exists, pass bytes array to create the file.
+        :param file_name:       name (optionally with the file path) of the attached file.
+        :param file_content:    file content if the file name does not exist, pass as bytes to create the file.
         :param root_path:       root path on local-machine of the new file object to update.
                                 using :attr:`.client_root` if not specified.
         :param stamp:           optional timestamp (using :func:`~ae.oaio_model.now_stamp` if not specified).
         :return:                the updated :class:`~ae.oaio_model.OaiObject` dataclass instance.
-        :raises AssertionError: if file to update does not exist.
+        :raises AssertionError: if the file to update does not exist.
         """
         values = deepcopy(self.client_objectz[oaio_id].client_values)
         if file_name:
@@ -598,10 +598,10 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
 
         :param oaio_id:         id of the oai folder object to update.
         :param root_path:       new root path on local-machine of the new folder object to update.
-                                using current root path if not specified.
+                                using the current root path if not specified.
         :param stamp:           optional timestamp (using :func:`~ae.oaio_model.now_stamp` if not specified).
         :return:                the updated :class:`~ae.oaio_model.OaiObject` dataclass instance.
-        :raises AssertionError: if same file is in add_files and in removed_files,
+        :raises AssertionError: if the same file is in add_files and in removed_files,
                                 or if one of the files to update does not exist.
         """
         values = deepcopy(self.client_objectz[oaio_id].client_values)
@@ -648,7 +648,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
 
     def upsert_subscription(self, oaio_id: OaioIdType, user_name: OaioUserIdType,
                             access_right: OaioAccessRightType = READ_ACCESS_RIGHT) -> int:
-        """ add/delete subscriber of an oai object or update the access right of an existing user subscription.
+        """ add/delete the subscriber of an oai object or update the access right of an existing user subscription.
 
         :param oaio_id:         id of the oaio to subscribe to or to unsubscribe from.
         :param user_name:       name of the un-/subscribing user.
@@ -656,10 +656,10 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
                                 or a user access right (one of :data:`~ae.oaio_model.ACCESS_RIGHTS`) to subscribe
                                 the oaio specified by :paramref:`~upsert_subscription.oaio_id`
                                 to a user specified by :paramref:`~upsert_subscription.user_name`.
-                                e.g. to grant update rights pass the value :data:`~ae.oaio_model.UPDATE_ACCESS_RIGHT`.
+                                e.g., to grant update rights, pass the value :data:`~ae.oaio_model.UPDATE_ACCESS_RIGHT`.
                                 if not specified then the value :data:`~ae.oaio_model.READ_ACCESS_RIGHT` will be used.
         :return:                the primary key integer value (Pubz.Pid) of the added/updated Pubz subscription record
-                                or 0/zero if an error occurred.
+                                or a zero integer (0) if an error occurred.
         """
         data = {'oaio_id': oaio_id, 'username': user_name, 'access_right': access_right}
         res = self._request('post', 'subscribe/', json=data)    # json-kwarg implies content-type 'application/json' hdr
@@ -674,7 +674,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
                                 or an empty or unregistered oaio id if the oaio is not yet registered.
         :return:                list of dicts with the keys 'username' and 'access_right', or empty list on error. the
                                 returned list is sorted by the access_right (create, delete, update, read) and username.
-                                if an empty/unregistered oaio id got specified all registered userz will be returned
+                                if an empty/unregistered oaio id got specified, all registered userz will be returned
                                 with the :data:`~ae.oaio_model.NO_ACCESS_RIGHT` access right.
         """
         res = self._request('get', f'user_subz/{oaio_id or "_not__existing__oaio_id_"}')
@@ -690,7 +690,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         """ wipe the specified user including all its objects, subscriptions and log entries.
 
         :param user_name:       name of the subscribing user to be wiped from the database.
-        :return:                empty string if user including its subscription and log entries could be removed,
+        :return:                empty string if the user (including its subscription and log entries) could be removed,
                                 else the error message.
         """
         res = self._request('post', 'wipe_user/', json={'Uid': user_name})

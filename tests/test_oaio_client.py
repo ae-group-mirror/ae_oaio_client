@@ -68,11 +68,11 @@ class TestInstantiation:
 
 # ******   test environment for mocked unit and live integration tests   ******
 
-other_user = 'tst_oth_usr'      # other user, for subscription sharing tests
+other_user = 'tst_oth_usr'      # another user, for subscription sharing tests
 
 
 def _csh_file_content(client_obj: OaioClient, oai_obj: OaiObject, file_count: int = 1) -> dict[str, bytes]:
-    """ download content of attached file(s) from mocked or live cloud storage host. """
+    """ download content of the attached file(s) from a mocked or a live cloud storage host. """
     # noinspection PyProtectedMember
     files, csh_api, client_path, server_path = client_obj._client_server_file_api_paths(oai_obj)
     assert csh_api
@@ -105,12 +105,14 @@ EMPTY_FOLDER = "FOLDER HAS NO CONTENT: simulated directory left to allow separat
 CSH_API_ID = 'CshMock'          # referring to mock cloud storage class :class:`CshMockApi`
 deployed_file_contents = {}     # keep/publish test files in mocked cloud storage for assertions
 
+
 def _csh_mock_cleared_errors():
     err_msg = ""
     if not all(content == EMPTY_FOLDER for _file, content in deployed_file_contents.items()):
         files_left = {fi: co for fi, co in deployed_file_contents.items() if co != EMPTY_FOLDER}
         err_msg += f"_csh_mock_cleared_errors() found deployed and uncleared test files: {files_left}"
     return err_msg
+
 
 class CshMockApi(CshApiBase):
     """ simulating dummy cloud storage server - available via :func:`csh_api_class` with id=='CshMock' """
@@ -146,13 +148,17 @@ class CshMockApi(CshApiBase):
             if not found:
                 self.error_message = f"CshMock-delete-error {file_path} not in {files}"
 
-        if found and len(left_parts := file_path.split('/')) > 2:
-            dir_path = '/'.join(left_parts[:-1]) + '/'
-            files[dir_path] = EMPTY_FOLDER
+        if found:
+            left_parts = file_path.split('/')
+            if len(left_parts) > 2:
+                dir_path = '/'.join(left_parts[:-1]) + '/'
+                files[dir_path] = EMPTY_FOLDER
 
         return self.error_message
 
+
 registered_oai_objectz: dict[str, OaiObject] = {}
+
 
 def _mocked_get_or_post_success_response(url: str, **kwargs) -> requests.Response:
     """ requests.Session().get/.post method response mocks, simulating oaio server. """
@@ -195,6 +201,7 @@ def _mocked_get_or_post_success_response(url: str, **kwargs) -> requests.Respons
 
     return mock_res
 
+
 def _mocked_get_or_post_failure_response(url: str, **kwargs) -> requests.Response:
     """ requests.Session().get/.post method response mocks, returning error """
     mock_res = MagicMock()
@@ -203,11 +210,12 @@ def _mocked_get_or_post_failure_response(url: str, **kwargs) -> requests.Respons
     mock_res.json.return_value = {'e_r_r': f"mocked error for url {url} and {kwargs=}"}
     return mock_res
 
+
 def user_client(usr_name: str):
     """ provide OaioClient instances simulating the specified user, connected to mocked oaio and cloud storage servers.
 
     the yield value is the OaioClient instance of the primary user.
-    used as fixture via yield from for username parameterized unit tests.
+    used as a fixture via yield from for username-parameterized unit tests.
     running also in CI tests on git repo host.
 
     referred and mocked `response` instance attributes and methods: ok, status_code, json(), raise_for_status()
@@ -238,10 +246,12 @@ def user_client(usr_name: str):
         registered_oai_objectz.clear()
         deployed_file_contents.clear()
 
+
 @pytest.fixture
 def mocked_client(request):
     """ OaioClient instance for user uId """
     yield from user_client('uId')
+
 
 @pytest.fixture
 def other_client(mocked_client):
@@ -595,7 +605,7 @@ class TestOaioClientWithMockedServers:
         reg_name = 'tst_unregister_wiped_file.txt'
         oai_obj = mocked_client.register_file(reg_name, file_content=b"unregister wipe err test file content")
         assert mocked_client.o_synchronize_with_server_if_online()
-        assert _csh_file_remove(mocked_client, oai_obj) == ""  # force error by removing file from the cloud storage
+        assert _csh_file_remove(mocked_client, oai_obj) == ""  # force error by removing the file from the cloud storage
         assert _csh_mock_cleared_errors() == ""
 
         err_msg = mocked_client.unregister_object(oai_obj.oaio_id, wipe_files=True)
@@ -952,16 +962,16 @@ def live_client():
                          )
         ocl.o_synchronize_with_server_if_online = ocl.synchronize_with_server_if_online
         ocl.synchronize_with_server_if_online = lambda: True  # monkey patch to allow manual server sync in tests
-        ocl._csh_api = lambda *_args: liv_api           # monkey patch to prevent Cshz test rec in live server database
+        ocl._csh_api = lambda *_args: liv_api           # monkey patch to prevent Cshz test rec in the live server DB
 
         assert ocl.error_message == ""
         assert liv_api.error_message == ""
-        # noinspection PyTypeChecker
-        assert not os.listdir(local_obj_cache_path := os_path_join(ocl.client_root, OBJECTS_DIR))
+        local_obj_cache_path = os_path_join(ocl.client_root, OBJECTS_DIR)
+        assert not os.listdir(local_obj_cache_path)
         # noinspection PyProtectedMember
         assert not ocl._load_server_objectz()           # ensure empty/clean test env
         assert other_user not in [_['username'] for _ in ocl.userz_access('any_not_existing_oaio_id')]
-        assert liv_api.list_dir('/') == []              # None if storage_root dir does not exist, [] if dir is empty
+        assert liv_api.list_dir('/') == []  # None if storage_root dir does not exist, [] if the directory is empty
 
         yield cast(Any, ocl)
 
@@ -970,9 +980,9 @@ def live_client():
         # noinspection PyProtectedMember
         assert not ocl._load_server_objectz()  # ensure empty/clean test env
         assert other_user not in [_['username'] for _ in ocl.userz_access('any_existing_or_not_existing_oaio_id')]
-        assert liv_api.list_dir('/') == []              # None if storage_root dir does not exist, [] if dir is empty
+        assert liv_api.list_dir('/') == []  # None if storage_root dir does not exist, [] if the directory is empty
 
-    finally:    # cleanup - also after failed test
+    finally:    # cleanup - also after a failed test
         if ocl:
             # noinspection PyProtectedMember
             for oai_obj in ocl._load_server_objectz().values():
@@ -1238,7 +1248,7 @@ class TestIntegrationWithLiveServers:
             assert live_client.error_message == ""
             assert pid != 0
 
-            # to allow check the subscription of other user and to mock a request, OAIO_USERNAME has to be supervisor
+            # to allow subscription checking of another user and to mock a request, OAIO_USERNAME has to be supervisor
             live_client.user_name = other_user
             live_client.session.headers[HTTP_HEADER_USR_ID] = repr(other_user.encode())
             assert oai_obj.oaio_id in live_client._load_server_objectz(), f"{live_client.error_message=}"
@@ -1492,7 +1502,7 @@ class TestIntegrationWithLiveServers:
             assert live_client.error_message == ""
             assert pid != 0
 
-            # to allow check the subscription of other user and to mock a request, OAIO_USERNAME has to be supervisor
+            # to allow subscription checking of another user and to mock a request, OAIO_USERNAME has to be supervisor
             live_client.user_name = other_user
             live_client.session.headers[HTTP_HEADER_USR_ID] = repr(other_user.encode())
             assert oai_obj.oaio_id in live_client._load_server_objectz(), f"{live_client.error_message=}"
@@ -1518,7 +1528,7 @@ class TestIntegrationWithLiveServers:
         try:
             oai_obj = live_client.register_object({})
             assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
-            assert live_client.upsert_subscription(oai_obj.oaio_id, other_user)  # create User/Userz recs for other user
+            assert live_client.upsert_subscription(oai_obj.oaio_id, other_user)  # create Userz recs for another user
             assert other_user in [_['username'] for _ in live_client.userz_access(oai_obj.oaio_id)]
 
             assert live_client.wipe_user(other_user) == ""
