@@ -32,7 +32,7 @@ from ae.oaio_model import (                                                     
 from ae.paths import normalize, placeholder_path, Collector                                             # type: ignore
 
 
-__version__ = '0.3.18'
+__version__ = '0.3.19'
 
 
 LAST_SYNC_STAMP_FILE = 'last_sync_stamp.txt'    #: file name to store the last synchronization timestamp
@@ -77,7 +77,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         self.base_url = 'http' + ('' if host[:9] in ('localhost', '127.0.0.1') else 's') + f'://{host}/api/'
         self.credentials = credentials
         self.user_name = credentials.get('username') or os_user_name()
-        self.app_id = app_id or self.cae and self.cae.app_name or app_name_guess()
+        self.app_id = app_id or self.main_app and self.main_app.app_name or app_name_guess()
         self.device_id = device_id or os_device_id
         self.csh_default_id = csh_default_id
         self.client_root = normalize(client_root)
