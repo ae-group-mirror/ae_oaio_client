@@ -1,4 +1,4 @@
-# THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.tpl_project V0.3.36
+# THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.project_tpls v0.3.77
 # ae:additional exludes for Sphinx, mypy, pylint, PyCharm, kivy, enaml
 bin
 .buildozer
@@ -12,8 +12,6 @@ __enamlcache__
 *.log
 logs/
 mypy_report/
-pev.defaults
-pev.updates
 .pylint/
 
 
@@ -63,6 +61,8 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+# ae: added to NOT exclude Kivy's buildozer.spec
+!buildozer.spec
 
 # Installer logs
 pip-log.txt

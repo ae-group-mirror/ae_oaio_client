@@ -1,12 +1,12 @@
-<!-- THIS FILE IS EXCLUSIVELY MAINTAINED by the project ae.ae V0.3.96 -->
-<!-- THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.tpl_namespace_root V0.3.14 -->
-# oaio_client 0.3.19
+<!-- THIS FILE IS EXCLUSIVELY MAINTAINED by the project ae.ae v0.3.103 -->
+<!-- THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.namespace_root_tpls v0.3.22 -->
+# oaio_client 0.3.20
 
 [![GitLab develop](https://img.shields.io/gitlab/pipeline/ae-group/ae_oaio_client/develop?logo=python)](
     https://gitlab.com/ae-group/ae_oaio_client)
 [![LatestPyPIrelease](
-    https://img.shields.io/gitlab/pipeline/ae-group/ae_oaio_client/release0.3.18?logo=python)](
-    https://gitlab.com/ae-group/ae_oaio_client/-/tree/release0.3.18)
+    https://img.shields.io/gitlab/pipeline/ae-group/ae_oaio_client/release0.3.20?logo=python)](
+    https://gitlab.com/ae-group/ae_oaio_client/-/tree/release0.3.20)
 [![PyPIVersions](https://img.shields.io/pypi/v/ae_oaio_client)](
     https://pypi.org/project/ae-oaio-client/#history)
 
@@ -54,7 +54,7 @@ following command in the root folder of this repository
 (ae_oaio_client):
 
 ```shell script
-pip install -e .[dev]
+pip install --editable .[dev]
 ```
 
 the last command will install this module portion, along with the tools you need
