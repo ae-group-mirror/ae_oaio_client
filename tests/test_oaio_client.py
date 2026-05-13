@@ -8,15 +8,17 @@ import pytest
 import requests
 
 from ae.base import (
-    TESTS_FOLDER, app_name_guess, load_dotenvs, os_device_id, os_path_abspath, os_path_dirname, os_path_isdir,
-    os_path_isfile, os_path_join, os_user_name, read_file, write_file)
+    TESTS_FOLDER,
+    os_path_abspath, os_path_dirname, os_path_isdir, os_path_isfile, os_path_join, read_file, write_file)
+from ae.system import app_name_guess, load_dotenvs, os_device_id, os_user_name
+from ae.paths import normalize, placeholder_path
 from ae.cloud_storage import CshApiBase, DigiApi
 from ae.oaio_model import (
     CREATE_ACCESS_RIGHT, DELETE_ACTION, FILES_DIR, FILES_VALUES_KEY, HTTP_HEADER_USR_ID, OBJECTS_DIR, REGISTER_ACTION,
     ROOT_VALUES_KEY, UPDATE_ACCESS_RIGHT, UPLOAD_ACTION,
     now_stamp, object_dict,
     OaiObject)
-from ae.paths import normalize, placeholder_path
+
 
 from ae.oaio_client import LAST_SYNC_STAMP_FILE, OaioClient
 
@@ -86,14 +88,14 @@ def _csh_file_remove(client_obj: OaioClient, oai_obj: OaiObject, file_count: int
     # noinspection PyProtectedMember
     files, csh_api, client_path, server_path = client_obj._client_server_file_api_paths(oai_obj)
     err_msg = client_obj.error_message
-    if not csh_api:
-        err_msg += "cloud storage host api could not be determined"
     if len(files) != file_count:
         err_msg += f"files count mismatch: {len(files)} != {file_count}"
-
-    for fil in files:
-        err_msg += csh_api.delete_file_or_folder(os_path_join(server_path, fil))
-    err_msg += csh_api.delete_file_or_folder(os_path_dirname(server_path))  # also remove the folder named as oaio_id
+    if not csh_api:
+        err_msg += "cloud storage host api could not be determined"
+    else:
+        for fil in files:
+            err_msg += csh_api.delete_file_or_folder(os_path_join(server_path, fil))
+        err_msg += csh_api.delete_file_or_folder(os_path_dirname(server_path))  # remove the folder named as oaio_id
 
     return err_msg
 
@@ -218,7 +220,7 @@ def user_client(usr_name: str):
     used as a fixture via yield from for username-parameterized unit tests.
     running also in CI tests on git repo host.
 
-    referred and mocked `response` instance attributes and methods: ok, status_code, json(), raise_for_status()
+    referred and mocked `response` instance attributes and methods: `ok`, `status_code`, `json()`, `raise_for_status()`.
     """
     cli_root = os_path_join(TESTS_FOLDER, f'uTstOC_root_{usr_name}')    # Oaio Client Unit Test Root of usr_nam
     with patch('ae.oaio_client.requests') as mock_req:
@@ -274,7 +276,7 @@ class TestOaioClientWithMockedServers:
         assert mocked_client.last_sync_stamp == stamp
 
     def test_register_file(self, mocked_client):
-        oai_obj = None
+        oai_obj: OaiObject | None = None
         stamp = now_stamp()
         dir_path = ""
         fil_name = 'tst_fil.xxx'
@@ -286,6 +288,7 @@ class TestOaioClientWithMockedServers:
         try:
             oai_obj = mocked_client.register_file(fil_name, file_content=fil_content, stamp=stamp)
 
+            assert oai_obj
             oaio_id = oai_obj.oaio_id
             dir_path = mocked_client._client_file_root(oaio_id, oai_obj.client_values)
             assert mocked_client.error_message == ""
@@ -786,6 +789,8 @@ class TestOaioClientWithMockedServers:
             for dir_nam in sub_dirs:
                 os.makedirs(os_path_join(root_path, dir_nam))
             oai_obj = mocked_client.register_folder(root_path, stamp=reg_stamp)
+
+            assert oai_obj
             assert mocked_client.o_synchronize_with_server_if_online()
             assert mocked_client.error_message == ""
             assert len(mocked_client.client_objectz[oai_obj.oaio_id].client_values[FILES_VALUES_KEY]) == 0
@@ -798,6 +803,7 @@ class TestOaioClientWithMockedServers:
             oai_obj = mocked_client.update_folder(oai_obj.oaio_id, root_path=root_path, stamp=upd_stamp)
 
             assert mocked_client.error_message == ""
+            assert oai_obj
             assert oai_obj.oaio_id in mocked_client.client_objectz
             assert oai_obj is mocked_client.client_objectz[oai_obj.oaio_id]
             assert oai_obj.client_stamp == upd_stamp
@@ -833,10 +839,11 @@ class TestOaioClientWithMockedServers:
                 assert len(mocked_client.client_objectz) == local_object_count, err_msg
 
     def test_update_object_after_upload(self, mocked_client):
-        oai_obj = None
+        oai_obj: OaiObject | None = None
         try:
             reg_stamp = now_stamp()
             oai_obj = mocked_client.register_object({'val_key': 'reg_val'}, stamp=reg_stamp)
+            assert oai_obj
             assert mocked_client.o_synchronize_with_server_if_online()
             upd_stamp = now_stamp()
 
@@ -855,10 +862,11 @@ class TestOaioClientWithMockedServers:
                 assert not os_path_isfile(os_path_join(mocked_client.client_root, OBJECTS_DIR, oai_obj.oaio_id))
 
     def test_update_object_before_upload(self, mocked_client):
-        oai_obj = None
+        oai_obj: OaiObject | None = None
         try:
             reg_stamp = now_stamp()
             oai_obj = mocked_client.register_object({'val_key': 'reg_val'}, stamp=reg_stamp)
+            assert oai_obj
             upd_stamp = now_stamp()
 
             mocked_client.update_object(oai_obj.oaio_id, {'val_key': 'upd_val'}, stamp=upd_stamp)
@@ -926,9 +934,10 @@ class TestOaioClientWithMockedServers:
         assert len(users) == 0
 
     def test_wipe_user(self, mocked_client):
-        oai_obj = None
+        oai_obj: OaiObject | None = None
         try:
             oai_obj = mocked_client.register_object({})
+            assert oai_obj
             mocked_client.upsert_subscription(oai_obj.oaio_id, other_user)  # create User/Userz recs for other usr
 
             assert mocked_client.wipe_user(other_user) == ""
@@ -951,8 +960,8 @@ def live_client():
     liv_api = ocl = None
     try:
         liv_api = DigiApi(root_folder=storage_root,     # TEST_DIGI_ROOT_FOLDER_PATH exclusive to test_cloud_storage.py
-                          email=os.environ.get('TEST_DIGI_API_EMAIL'),
-                          password=os.environ.get('TEST_DIGI_API_PASSWORD'))
+                          email=os.environ.get('TEST_DIGI_API_EMAIL', ""),
+                          password=os.environ.get('TEST_DIGI_API_PASSWORD', ""))
         ocl = OaioClient(os.environ['OAIO_HOST_NAME'],
                          {'username': os.environ['OAIO_USERNAME'], 'password': os.environ['OAIO_PASSWORD']},
                          app_id='OCLITst',              # Oaio Client Live Integration Tests with individual app id
@@ -990,8 +999,8 @@ def live_client():
                 ocl._delete_server_object(oai_obj)
             if other_user in [_['username'] for _ in ocl.userz_access('any_NOT_existing_oaio_id')]:
                 ocl.wipe_user(other_user)
-        if ocl.error_message:
-            print(f"live test oaio server cleanup errors: \n{ocl.error_message}")
+            if ocl.error_message:
+                print(f"live test oaio server cleanup errors: \n{ocl.error_message}")
 
         if liv_api and (liv_api.delete_file_or_folder('/') or liv_api.list_dir('/') is not None):
             print(f"live test storage server {storage_root=} cleanup errors: \n{liv_api.error_message}")
@@ -1017,7 +1026,7 @@ class TestIntegrationWithLiveServers:
         assert live_client.last_sync_stamp == stamp
 
     def test_register_file(self, live_client):
-        oai_obj = None
+        oai_obj: OaiObject | None = None
         stamp = now_stamp()
         dir_path = ""
         fil_name = 'tst_fil.yyy'
@@ -1028,6 +1037,7 @@ class TestIntegrationWithLiveServers:
 
         try:
             oai_obj = live_client.register_file(fil_name, file_content=fil_content, stamp=stamp)
+            assert oai_obj
 
             oaio_id = oai_obj.oaio_id
             dir_path = live_client._client_file_root(oaio_id, oai_obj.client_values)
@@ -1064,7 +1074,7 @@ class TestIntegrationWithLiveServers:
                 shutil.rmtree(dir_path)
 
     def test_register_file_with_root(self, live_client):
-        oai_obj = None
+        oai_obj: OaiObject | None = None
         stamp = now_stamp()
         dir_path = os_path_abspath(os_path_join(TESTS_FOLDER, 'reg file dir'))
         fil_name = 'tst_fil.tst'
@@ -1178,7 +1188,7 @@ class TestIntegrationWithLiveServers:
             assert len(live_client.client_objectz) == local_object_count + 1
 
         finally:
-            if oaio_id:
+            if oai_obj and oaio_id:
                 assert live_client.unregister_object(oaio_id, wipe_files=True) == ""
                 assert len(live_client.client_objectz) == local_object_count
                 err_msg = _csh_file_remove(live_client, oai_obj, file_count=len(file_paths))
@@ -1188,7 +1198,7 @@ class TestIntegrationWithLiveServers:
                 shutil.rmtree(folder_path)
 
     def test_register_object(self, live_client):
-        oai_obj = None
+        oai_obj: OaiObject | None = None
         stamp = now_stamp()
         values = {'tst_str': 'tst_val', 'tst_int': 69}
 
@@ -1271,9 +1281,10 @@ class TestIntegrationWithLiveServers:
                 assert oai_obj.oaio_id not in live_client._load_server_objectz(), f"{live_client.error_message=}"
 
     def test_unsubscribe(self, live_client):
-        oai_obj = None
+        oai_obj: OaiObject | None = None
         try:
             oai_obj = live_client.register_object({})
+            assert oai_obj
             assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
             assert live_client.upsert_subscription(oai_obj.oaio_id, other_user)
 
@@ -1297,11 +1308,11 @@ class TestIntegrationWithLiveServers:
                 assert live_client.unregister_object(oai_obj.oaio_id) == ""
 
     def test_unsubscribe_err(self, live_client):
-        oai_obj = None
+        oai_obj: OaiObject | None = None
         try:
             oai_obj = live_client.register_object({})
-            assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
             assert oai_obj
+            assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
             assert oai_obj.oaio_id in live_client._load_server_objectz()
             assert oai_obj.oaio_id in live_client.client_objectz
 
@@ -1315,8 +1326,8 @@ class TestIntegrationWithLiveServers:
         finally:
             if oai_obj:
                 assert live_client.unregister_object(oai_obj.oaio_id) == ""
-            assert oai_obj.oaio_id not in live_client._load_server_objectz()
-            assert oai_obj.oaio_id not in live_client.client_objectz
+                assert oai_obj.oaio_id not in live_client._load_server_objectz()
+                assert oai_obj.oaio_id not in live_client.client_objectz
 
     def test_update_file(self, live_client):
         reg_stamp = now_stamp()
@@ -1486,7 +1497,7 @@ class TestIntegrationWithLiveServers:
             assert len(live_client.client_objectz) == local_object_count
 
     def test_upsert_subscription(self, live_client):
-        oai_obj = None
+        oai_obj: OaiObject | None = None
         pid = 0
         try:
             oai_obj = live_client.register_object({})
@@ -1508,11 +1519,11 @@ class TestIntegrationWithLiveServers:
             assert oai_obj.oaio_id in live_client._load_server_objectz(), f"{live_client.error_message=}"
 
         finally:
-            if pid:
-                live_client.user_name = oai_obj.username
-                live_client.session.headers[HTTP_HEADER_USR_ID] = repr(oai_obj.username.encode())
-                assert live_client.wipe_user(other_user) == ""
             if oai_obj:
+                if pid:
+                    live_client.user_name = oai_obj.username
+                    live_client.session.headers[HTTP_HEADER_USR_ID] = repr(oai_obj.username.encode())
+                    assert live_client.wipe_user(other_user) == ""
                 assert live_client.unregister_object(oai_obj.oaio_id) == ""
 
     def test_userz_access(self, live_client):
@@ -1524,9 +1535,10 @@ class TestIntegrationWithLiveServers:
         assert 'access_right' in users[0]
 
     def test_wipe_user(self, live_client):
-        oai_obj = None
+        oai_obj: OaiObject | None = None
         try:
             oai_obj = live_client.register_object({})
+            assert oai_obj
             assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
             assert live_client.upsert_subscription(oai_obj.oaio_id, other_user)  # create Userz recs for another user
             assert other_user in [_['username'] for _ in live_client.userz_access(oai_obj.oaio_id)]

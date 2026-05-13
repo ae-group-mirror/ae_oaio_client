@@ -1,5 +1,5 @@
-# THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.tpl_project V0.3.36
-image: python:3.9
+# THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.project_tpls v0.3.77
+image: python:3.12
 
 
 
@@ -7,13 +7,13 @@ image: python:3.9
 
 before_script:
   - python --version
-  - pip install --upgrade setuptools pip
+  - pip install --upgrade setuptools pip pipx
   - pip install --upgrade -r requirements.txt -r tests/requirements.txt
 
 
 integrity:
   script:
-    - grm -v check-integrity
+    - pipx run --spec aedev_project_manager project-manager -v check-integrity
   artifacts:
     paths:
       - mypy_report/
@@ -30,7 +30,6 @@ pages:
     - ls -l -R
     - mkdir -p public/coverage
     - mv -f -v htmlcov/* public/coverage
-    - mv -f -v .pytest_cache/coverage.txt public/
     - mv -f -v .pytest_cache/coverage.svg public/
     - mv -f -v mypy_report/lineprecision.txt public/
     - mv -f -v mypy_report/mypy.svg public/
@@ -53,7 +52,8 @@ pypi_deploy:
     TWINE_USERNAME: $PYPI_USERNAME
     TWINE_PASSWORD: $PYPI_PASSWORD
   before_script:
-     - pip install --upgrade aedev_setup_project pip setuptools twine wheel
-     - python setup.py sdist bdist_wheel
+     - pip install --upgrade pip build twine
+     - python -m build
   script:
+    # use test.pypi.org for integration/unit test projects (if is under :data:`~aedev.base.TEST_PROJECTS_PARENT_FOLDER`)
     - twine upload --verbose dist/*

@@ -19,9 +19,10 @@ from typing import Optional, Sequence, cast
 import requests
 
 from ae.base import (                                                                                   # type: ignore
-    app_name_guess, defuse, mask_secrets, os_device_id, os_path_isdir, os_path_isfile, os_path_join, os_path_relpath,
-    os_user_name, read_file, write_file,
-    ErrorMsgMixin)
+    defuse, mask_secrets, os_path_isdir, os_path_isfile, os_path_join, os_path_relpath, read_file, write_file)
+from ae.app_log import ErrorMsgMixin                                                                    # type: ignore
+from ae.system import app_name_guess, os_device_id, os_user_name                                        # type: ignore
+from ae.paths import normalize, placeholder_path, Collector                                             # type: ignore
 from ae.cloud_storage import CshApiBase, csh_api_class                                                  # type: ignore
 from ae.oaio_model import (                                                                             # type: ignore
     CREATE_ACCESS_RIGHT, DELETE_ACTION, FILES_DIR, FILES_VALUES_KEY, MAX_STAMP_DIFF, NO_ACCESS_RIGHT, OBJECTS_DIR,
@@ -29,13 +30,12 @@ from ae.oaio_model import (                                                     
     context_encode, now_stamp, object_dict, object_id, stamp_diff,
     OaioAccessRightType, OaioCshIdType, OaioIdType, OaioMapType, OaiObject, OaioStampType, OaioUserIdType,
     OaioValuesType)
-from ae.paths import normalize, placeholder_path, Collector                                             # type: ignore
 
 
-__version__ = '0.3.19'
+__version__ = '0.3.20'
 
 
-LAST_SYNC_STAMP_FILE = 'last_sync_stamp.txt'    #: file name to store the last synchronization timestamp
+LAST_SYNC_STAMP_FILE = 'last_sync_stamp.txt'            #: file name to store the last synchronization timestamp
 
 
 UserzAccessType = list[dict[OaioUserIdType, OaioAccessRightType]]   #: :meth:`OaioClient.userz_access` return value
@@ -61,9 +61,9 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         :param app_id:          optional id/name of the app from where the client is connecting from.
                                 defaults to :attr:`~ae.core.AppBase.app_name` attribute value (if the :mod:`ae.core`
                                 portion/module got included in the project) or (if not set) to the return value of the
-                                function :func:`~ae.base.app_name_guess`.
+                                function :func:`~ae.system.app_name_guess`.
         :param device_id:       id of the client device.
-                                defaults to :data:`~ae.base.os_device_id`.
+                                defaults to :data:`~ae.system.os_device_id`.
         :param csh_default_id:  id for the default cloud storage server to use.
                                 defaults to 'Digi'.
         :param client_root:     path to the folder on the local device where the oaio info and files get cached.
@@ -215,6 +215,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
     def _load_client_object_info(self, oaio_id: OaioIdType, info_path: str = "") -> OaiObject:
         """ load actual client/local oaio info of the oaio specified by its id. """
         obj_lit = read_file(os_path_join(info_path or os_path_join(self.client_root, OBJECTS_DIR), oaio_id))
+        # noinspection PyTypeChecker
         obj_dict = literal_eval(obj_lit)
         return OaiObject(**obj_dict)
 
@@ -251,7 +252,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         :return:                a boolean True value if still connected or successfully reconnected
                                 or False if offline, connection cannot be established, CSRF token not available or on
                                 any other server failure/error; in these cases check the message in the property
-                                :attr:`~OaioClient.error_message` (inherited from :class:`~ae.base.ErrorMsgMixin`).
+                                :attr:`~OaioClient.error_message` (inherited from :class:`~ae.app_log.ErrorMsgMixin`).
         """
         if self.connected:
             res = self._request('get', 'current_stamp/', _in_chk=True)
@@ -314,6 +315,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
 
         # pylint: disable-next=broad-exception-caught # pragma: no cover
         except (requests.HTTPError, requests.ConnectionError, AssertionError, Exception) as exception:
+            # noinspection PyStringConversionWithoutDunderMethod
             self._res_err(res, f"{method=} {exception=} {url=} {_in_chk=} {mask_secrets(request_kwargs)=}")
 
         return None
@@ -388,6 +390,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         """
         if not self._last_sync_stamp:
             self._last_sync_stamp = read_file(os_path_join(self.client_root, LAST_SYNC_STAMP_FILE))
+        # noinspection PyTypeChecker
         return self._last_sync_stamp
 
     @last_sync_stamp.setter
@@ -406,7 +409,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
                                 using :attr:`.client_root` if not specified.
         :param stamp:           optional timestamp (created by :func:`~ae.oaio_model.now_stamp` if not specified).
         :param csh_id:          cloud storage server id or empty string to use the default cloud storage server.
-        :return:                new OaiObject instance
+        :return:                new :class:`~ae.oaio_model.OaiObject` instance
                                 or None if either stamp or oaio_id are already registered (check self.error_message).
         :raises AssertionError: if the file to register does not exist.
         """
@@ -436,7 +439,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         :param root_path:       root path on the local-machine/client of the new folder object to register.
         :param stamp:           optional timestamp (created by :func:`~ae.oaio_model.now_stamp` if not specified).
         :param csh_id:          cloud storage server id or empty string to use the default cloud storage server.
-        :return:                new OaiObject instance
+        :return:                new :class:`~ae.oaio_model.OaiObject` instance
                                 or None if either stamp or oaio_id are already registered (check self.error_message).
         :raises AssertionError: if files to register do not exist.
         """
@@ -454,7 +457,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         :param stamp:           optional timestamp (created by :func:`~ae.oaio_model.now_stamp` if not specified).
         :param oaio_id:         object id (will be created if not passed).
         :param csh_id:          cloud storage server id. if empty/unspecified, use the default cloud storage server.
-        :return:                new OaiObject instance.
+        :return:                new :class:`~ae.oaio_model.OaiObject` instance.
                                 or None if either stamp or oaio_id are already registered (check self.error_message).
         :raises AssertionError: on invalid argument values/types or if the oaio_id got already registered.
         """

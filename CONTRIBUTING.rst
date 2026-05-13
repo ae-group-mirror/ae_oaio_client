@@ -1,6 +1,6 @@
 
 ..
-    THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.tpl_project V0.3.36
+    THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.project_tpls v0.3.77
 
 contributing
 ============
@@ -41,72 +41,76 @@ reviewers approve, the maintainers will merge.
 
 before you start make sure you have a `GitLab account <https://gitlab.com/users/sign_up>`__.
 
-contribution can be done either with the :mod:`git-repo-manager tool <aedev.git_repo_manager>` or directly by using
+contribution can be done either with the :mod:`project-manager tool <aedev.project_manager>` or directly by using
 the ``git`` command and the ``Gitlab`` server.
 
 
-using the git repository manager `grm`
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+using the project manager tool `pjm`
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 1. fork and clone the repository of this project to your computer
 
-   in your console change the working directory to your project's parent folder. then run the following command with
-   the ``new_feature_or_fix`` part replaced by an appropriate branch name, describing shortly your contribution::
+   in your console change the working directory to your project's parent folder. then run the following command::
 
-      grm -b new_feature_or_fix fork ae-group/ae_oaio_client
+      pjm fork ae-group/ae_oaio_client
 
    .. note::
-      the ``grm fork`` action will also add the forked repository as the remote ``upstream`` to your local
-      repository.
+      the ``pjm fork`` action will also add the forked repository as the ``upstream`` remote to your local repository.
 
-   after the repository fork you change your current working directory to the new working tree root folder,
-   created by the ``grm fork`` action, and execute the ``grm renew`` action. this will prepare a new package version
-   of the project and upgrade the project files created from templates to its latest version.
+   now change your current working directory to the new working-tree|project root folder,
+   created by the ``pjm fork`` action, and execute the ``pjm renew`` action with
+   the ``new_feature_or_fix`` part replaced by an appropriate branch name, describing shortly the new feature or the
+   bug-fix of your contribution::
+
+      pjm -b new_feature_or_fix renew
+
+   this will prepare a new release version of the project and upgrade the project files created from templates
+   to its latest version.
 
 2. code and check
 
    now use your favorite IDE/Editor to implement the new feature or code the bug fix. don't forget to amend the project
    with new unit and integrity tests, and ensure they pass, by executing from time to time the
-   ``grm check`` action.
+   ``pjm check`` action.
 
 3. publish your changes
 
-   before you initiate a push/merge request against the Gitlab server, execute the ``grm prepare`` action,
+   before you initiate a push/merge request against the Gitlab server, execute the ``pjm prepare`` action,
    which will create, with the help of the ``git diff`` command, a `.commit_msg.txt` file in the
    working tree root of your project, containing a short summary in the first line followed with a blank line and
    a list of the project files that got added, changed or deleted.
 
    .. hint::
-      the `.commit_msg.txt` file can be amended by any text editor before you run the ``grm commit`` action.
+      the `.commit_msg.txt` file can be amended by any text editor before you run the ``pjm commit`` action.
       for changes initiated by an issue please include the issue number (in the format ``fixes #<issue-number>``) into
       this file. you may use ``Markdown`` syntax in this file for simple styling.
 
-   to finally commit and upload your changes run the following three grm actions in the root folder of your project::
+   to finally commit and upload your changes run the following three pjm actions in the root folder of your project::
 
-      grm commit
-      grm push
-      grm request
+      pjm commit
+      pjm push
+      pjm request
 
-   the ``grm commit`` command is first executing a ``grm check`` action to do a finally check of the project resources
+   the ``pjm commit`` command is first executing a ``pjm check`` action to do a finally check of the project resources
    and to run the unit and integrity tests. if all these checks pass then a new git commit will be created, including
-   your changes to the project. ``grm push``will then push the commit to your ``origin`` remote repository (your fork)
-   and ``grm request`` will finally create a bew merge/pull request against the ``upstream`` remote repository
+   your changes to the project. ``pjm push``will then push the commit to your ``origin`` remote repository (your fork)
+   and ``pjm request`` will finally create a bew merge/pull request against the ``upstream`` remote repository
    (the forked one).
 
    .. hint::
-      to complete the workflow a maintainer of the project has to execute the ``grm release`` action. this will
+      to complete the workflow a maintainer of the project has to execute the ``pjm release`` action. this will
       merge your changes into the main branch `develop` of the ``upstream`` repository and then release
       a new version of the project onto PyPI.
 
 
-more detailed information of the features of the ``grm`` tool are available within `the grm user manual
-<https://aedev.readthedocs.io/en/latest/man/git_repo_manager.html>`__.
+more detailed information of the features of the ``pjm`` tool are available within `the pjm user manual
+<https://aedev.readthedocs.io/en/latest/man/project_manager.html>`__.
 
 
 using `git` and `Gitlab`
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
-alternatively to the ``grm`` tool you could directly use the `git command suite <https://git-scm.com/docs>`__ and the
+alternatively to the ``pjm`` tool you could directly use the `git command suite <https://git-scm.com/docs>`__ and the
 `Gitlab website <https://gitlab.com>`__ to achieve the same (with a lot more of typing and fiddling ;-):
 
 1. fork the `upstream repository <https://gitlab.com/ae-group/ae_oaio_client>`__ into your user account.
@@ -191,6 +195,6 @@ useful links and resources
 
 - `General GitLab documentation <https://docs.gitlab.com/ce/>`__
 - `GitLab workflow documentation <https://docs.gitlab.com/ee/user/project/repository/forking_workflow.html>`__
-- grm (git repository manager) module
-  :mod:`project repository <aedev.git_repo_manager>`  and
-  `user manual <https://aedev.readthedocs.io/en/latest/man/git_repo_manager.html>`__
+- pjm (project-manager) tool project
+  :mod:`project repository <aedev.project_manager>`  and
+  `user manual <https://aedev.readthedocs.io/en/latest/man/project_manager.html>`__
