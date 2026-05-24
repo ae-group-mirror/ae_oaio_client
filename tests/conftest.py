@@ -1,4 +1,4 @@
-# THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.project_tpls v0.3.77
+# THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.project_tpls v0.3.78
 # pylint: disable=redefined-outer-name, unused-argument; suppress fixtures conflicts (silly pylint)
 """ fixtures for to test this project """
 import os
@@ -11,8 +11,9 @@ from unittest.mock import patch
 import pytest
 
 
+# noinspection PyTypeChecker
 assert (cwd := os.getcwd()) == (prj_root := os.path.dirname(os.path.dirname(__file__))), f"wrong {cwd=}, != {prj_root=}"
-sys.path.insert(0, prj_root)  # add project root (==CWD) to sys.path (to run pytest w/o the 'python -m' prefix)
+sys.path.insert(0, prj_root)  # add project root (==CWD) to sys.path (allowing to run pytest w/o the 'python -m' prefix)
 
 
 SKIP_EXPRESSION = "'CI_PROJECT_ID' in os.environ"
@@ -131,7 +132,7 @@ def logging_unpatched_shutdown_teardown() -> LoggedShutdownCalls:
 
 def _log_shutdown_calls(main_app: Any, exit_code: int, error_message: str = ""):
     """ AppBase|ConsoleApp.shutdown()-mock to prevent unregister of main-app|template-projects to log them in tests. """
-    from ae.base import stack_frames
+    from ae.system import stack_frames
 
     print()
     print(f"***** app.shutdown() called with {exit_code=} and {error_message=}; {main_app=}; stack:")
@@ -232,4 +233,4 @@ def tst_system(cons_app):
     """ CURRENTLY NOT USED """
     # pylint: disable=import-outside-toplevel, no-name-in-module, import-error
     from ae.sys_core import SystemBase      # type: ignore
-    yield SystemBase('Tst', cons_app, dict(User='TstUsr', Password='TstPwd', Dsn='TstDb@TstHost'))
+    yield SystemBase('Tst', cons_app, dict(User='TstUsr', Password='Tst Pwd', Dsn='TstDb@TstHost'))

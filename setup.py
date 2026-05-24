@@ -1,4 +1,4 @@
-# THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.project_tpls v0.3.77
+# THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.project_tpls v0.3.78
 """ setup of ae namespace module portion oaio_client: Our Asynchronously Interchangeable Objects Client. """
 import sys
 # noinspection PyUnresolvedReferences
@@ -81,7 +81,7 @@ setup_kwargs = {
     },
     'python_requires': '>=3.12',
     'url': 'https://gitlab.com/ae-group/ae_oaio_client',
-    'version': '0.3.20',
+    'version': '0.3.21',
     'zip_safe': True,
 }
 

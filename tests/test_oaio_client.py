@@ -9,7 +9,7 @@ import requests
 
 from ae.base import (
     TESTS_FOLDER,
-    os_path_abspath, os_path_dirname, os_path_isdir, os_path_isfile, os_path_join, read_file, write_file)
+    os_path_abspath, os_path_dirname, os_path_isdir, os_path_isfile, os_path_join, read_bin_file, write_bin_file)
 from ae.system import app_name_guess, load_dotenvs, os_device_id, os_user_name
 from ae.paths import normalize, placeholder_path
 from ae.cloud_storage import CshApiBase, DigiApi
@@ -73,7 +73,7 @@ class TestInstantiation:
 other_user = 'tst_oth_usr'      # another user, for subscription sharing tests
 
 
-def _csh_file_content(client_obj: OaioClient, oai_obj: OaiObject, file_count: int = 1) -> dict[str, bytes]:
+def _csh_file_content(client_obj: OaioClient, oai_obj: OaiObject, file_count: int = 1) -> dict[str, bytes | None]:
     """ download content of the attached file(s) from a mocked or a live cloud storage host. """
     # noinspection PyProtectedMember
     files, csh_api, client_path, server_path = client_obj._client_server_file_api_paths(oai_obj)
@@ -135,7 +135,7 @@ class CshMockApi(CshApiBase):
             self.error_message = f"CshMock-deploy-error: file '{path}' not found; id='{file_path}' src='{source_path}'"
             return ""
 
-        content = read_file(path, extra_mode='b')
+        content = read_bin_file(path)
         self.deployed_file_contents[file_path] = content
         return file_path
 
@@ -334,7 +334,7 @@ class TestOaioClientWithMockedServers:
         local_object_count = len(mocked_client.client_objectz)
 
         try:
-            write_file(fil_path, fil_content, make_dirs=True)
+            write_bin_file(fil_path, fil_content, make_dirs=True)
 
             oai_obj = mocked_client.register_file(fil_name, root_path=dir_path, stamp=stamp)
             assert mocked_client.error_message == ""
@@ -388,7 +388,7 @@ class TestOaioClientWithMockedServers:
 
         try:
             for fil_nam in file_paths:
-                write_file(os_path_join(root_path, fil_nam), fil_content + fil_nam.encode(), make_dirs=True)
+                write_bin_file(os_path_join(root_path, fil_nam), fil_content + fil_nam.encode(), make_dirs=True)
 
             oai_obj = mocked_client.register_folder(root_path, stamp=stamp)
 
@@ -524,8 +524,7 @@ class TestOaioClientWithMockedServers:
         assert syn_obj.client_values == reg_val
         assert syn_obj.server_values == reg_val
         assert syn_obj == mocked_client._load_client_object_info(oaio_id)
-        # noinspection PyTypeChecker
-        assert read_file(os_path_join(fil_root, reg_name), extra_mode='b') == reg_content
+        assert read_bin_file(os_path_join(fil_root, reg_name)) == reg_content
 
         assert mocked_client.upsert_subscription(oaio_id, other_client.user_name)
         assert other_client.o_synchronize_with_server_if_online()
@@ -544,8 +543,7 @@ class TestOaioClientWithMockedServers:
         assert syn_obj.client_values == upd_val
         assert syn_obj.server_values == reg_val
         assert syn_obj == other_client._load_client_object_info(oaio_id)
-        # noinspection PyTypeChecker
-        assert read_file(os_path_join(oth_root, upd_name), extra_mode='b') == upd_content
+        assert read_bin_file(os_path_join(oth_root, upd_name)) == upd_content
 
         assert other_client.o_synchronize_with_server_if_online()
 
@@ -555,8 +553,7 @@ class TestOaioClientWithMockedServers:
         assert syn_obj.client_values == upd_val
         assert syn_obj.server_values == upd_val
         assert syn_obj == other_client._load_client_object_info(oaio_id)
-        # noinspection PyTypeChecker
-        assert read_file(os_path_join(oth_root, upd_name), extra_mode='b') == upd_content
+        assert read_bin_file(os_path_join(oth_root, upd_name)) == upd_content
 
         assert mocked_client.o_synchronize_with_server_if_online()
 
@@ -566,8 +563,7 @@ class TestOaioClientWithMockedServers:
         assert syn_obj.client_values == upd_val
         assert syn_obj.server_values == upd_val
         assert syn_obj == mocked_client._load_client_object_info(oaio_id)
-        # noinspection PyTypeChecker
-        assert read_file(os_path_join(fil_root, upd_name), extra_mode='b') == upd_content
+        assert read_bin_file(os_path_join(fil_root, upd_name)) == upd_content
 
     def test_unregister_object(self, mocked_client):
         oai_obj = mocked_client.register_object({})
@@ -677,14 +673,14 @@ class TestOaioClientWithMockedServers:
 
         try:
             reg_stamp = now_stamp()
-            write_file(fil_path, b"", make_dirs=True)
+            write_bin_file(fil_path, b"", make_dirs=True)
             oai_obj = mocked_client.register_file(fil_name, root_path=dir_path, stamp=reg_stamp)
             assert mocked_client.error_message == ""
             assert oai_obj is not None
             assert mocked_client.o_synchronize_with_server_if_online()
             assert _csh_file_content(mocked_client, oai_obj) == {fil_name: b""}
 
-            write_file(fil_path, fil_content)
+            write_bin_file(fil_path, fil_content)
             upd_stamp = now_stamp()
 
             oai_obj = mocked_client.update_file(oai_obj.oaio_id, stamp=upd_stamp)
@@ -725,7 +721,7 @@ class TestOaioClientWithMockedServers:
         reg_stamp = now_stamp()
 
         try:
-            write_file(reg_path, b"")
+            write_bin_file(reg_path, b"")
             oai_obj = mocked_client.register_file(reg_name, root_path=reg_root, stamp=reg_stamp)
             assert mocked_client.error_message == ""
             assert oai_obj is not None
@@ -733,7 +729,7 @@ class TestOaioClientWithMockedServers:
             assert _csh_file_content(mocked_client, oai_obj) == {reg_name: b""}
             oaio_id = oai_obj.oaio_id
 
-            write_file(upd_path, fil_content, make_dirs=True)
+            write_bin_file(upd_path, fil_content, make_dirs=True)
             upd_stamp = now_stamp()
 
             oai_obj = mocked_client.update_file(oaio_id, file_name=upd_name, root_path=upd_root, stamp=upd_stamp)
@@ -798,7 +794,7 @@ class TestOaioClientWithMockedServers:
 
             upd_stamp = now_stamp()
             for fil_nam in file_paths:
-                write_file(os_path_join(root_path, fil_nam), fil_content + fil_nam.encode())
+                write_bin_file(os_path_join(root_path, fil_nam), fil_content + fil_nam.encode())
 
             oai_obj = mocked_client.update_folder(oai_obj.oaio_id, root_path=root_path, stamp=upd_stamp)
 
@@ -1084,7 +1080,7 @@ class TestIntegrationWithLiveServers:
         local_object_count = len(live_client.client_objectz)
 
         try:
-            write_file(fil_path, fil_content, make_dirs=True)
+            write_bin_file(fil_path, fil_content, make_dirs=True)
 
             oai_obj = live_client.register_file(fil_name, root_path=dir_path, stamp=stamp)
             assert live_client.error_message == ""
@@ -1139,7 +1135,7 @@ class TestIntegrationWithLiveServers:
 
         try:
             for fil_nam in file_paths:
-                write_file(os_path_join(folder_path, fil_nam), fil_content + fil_nam.encode(), make_dirs=True)
+                write_bin_file(os_path_join(folder_path, fil_nam), fil_content + fil_nam.encode(), make_dirs=True)
 
             oai_obj = live_client.register_folder(folder_path, stamp=stamp)
             oaio_id = oai_obj.oaio_id
@@ -1390,13 +1386,13 @@ class TestIntegrationWithLiveServers:
         try:
             csh_api = live_client._csh_api(live_client.csh_default_id)
             for fil_nam in file_paths:
-                write_file(os_path_join(folder_path, fil_nam), fil_content + fil_nam.encode(), make_dirs=True)
+                write_bin_file(os_path_join(folder_path, fil_nam), fil_content + fil_nam.encode(), make_dirs=True)
             reg_obj = live_client.register_folder(folder_path, stamp=reg_stamp)
             assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
 
             upd_stamp = now_stamp()
             for fil_nam in file_paths:
-                write_file(os_path_join(folder_path, fil_nam), fil_nam.encode() + b"-updated")
+                write_bin_file(os_path_join(folder_path, fil_nam), fil_nam.encode() + b"-updated")
             oai_obj = live_client.update_folder(reg_obj.oaio_id, root_path=folder_path, stamp=upd_stamp)
 
             oaio_id = oai_obj.oaio_id
@@ -1448,6 +1444,7 @@ class TestIntegrationWithLiveServers:
                 if oaio_id:
                     assert live_client.unregister_object(oaio_id, wipe_files=True) == ""
                     assert len(live_client.client_objectz) == local_object_count
+                if oai_obj:
                     err_msg = _csh_file_remove(live_client, oai_obj, file_count=len(file_paths))
                     assert reg_stamp in err_msg
                     assert oaio_id in err_msg

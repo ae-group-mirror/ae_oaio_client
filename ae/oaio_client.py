@@ -19,7 +19,8 @@ from typing import Optional, Sequence, cast
 import requests
 
 from ae.base import (                                                                                   # type: ignore
-    defuse, mask_secrets, os_path_isdir, os_path_isfile, os_path_join, os_path_relpath, read_file, write_file)
+    defuse, mask_secrets, os_path_isdir, os_path_isfile, os_path_join, os_path_relpath,
+    read_file, write_bin_file, write_file)
 from ae.app_log import ErrorMsgMixin                                                                    # type: ignore
 from ae.system import app_name_guess, os_device_id, os_user_name                                        # type: ignore
 from ae.paths import normalize, placeholder_path, Collector                                             # type: ignore
@@ -32,7 +33,7 @@ from ae.oaio_model import (                                                     
     OaioValuesType)
 
 
-__version__ = '0.3.20'
+__version__ = '0.3.21'
 
 
 LAST_SYNC_STAMP_FILE = 'last_sync_stamp.txt'            #: file name to store the last synchronization timestamp
@@ -179,7 +180,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
             if content is None:                                                             # pragma: no cover
                 self.error_message = f"cloud storage download error: {csh_api.error_message=} {oai_obj=} {file_path=}"
                 return False
-            write_file(os_path_join(client_path, file_path), content, make_dirs=True)
+            write_bin_file(os_path_join(client_path, file_path), content, make_dirs=True)
 
         oai_obj.server_stamp = oai_obj.client_stamp
         oai_obj.server_values = deepcopy(oai_obj.client_values)
@@ -428,7 +429,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         if file_content is None:
             assert os_path_isfile(file_path), f"file to register not found: {file_path}"
         else:
-            write_file(file_path, file_content, make_dirs=True)
+            write_bin_file(file_path, file_content, make_dirs=True)
 
         return self.register_object(values, stamp=stamp, oaio_id=oaio_id, csh_id=csh_id)
 
@@ -592,7 +593,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         if file_content is None:
             assert os_path_isfile(file_path), f"file to update does not exist in {file_path=}"
         else:
-            write_file(file_path, file_content, make_dirs=True)
+            write_bin_file(file_path, file_content, make_dirs=True)
 
         return self.update_object(oaio_id, values, stamp=stamp)
 
