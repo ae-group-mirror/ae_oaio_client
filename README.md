@@ -1,12 +1,12 @@
-<!-- THIS FILE IS EXCLUSIVELY MAINTAINED by the project ae.ae v0.3.103 -->
-<!-- THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.namespace_root_tpls v0.3.22 -->
-# oaio_client 0.3.21
+<!-- THIS FILE IS EXCLUSIVELY MAINTAINED by the project ae.ae v0.3.104 -->
+<!-- THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.namespace_root_tpls v0.3.31 -->
+# oaio_client 0.3.22
 
 [![GitLab develop](https://img.shields.io/gitlab/pipeline/ae-group/ae_oaio_client/develop?logo=python)](
     https://gitlab.com/ae-group/ae_oaio_client)
 [![LatestPyPIrelease](
-    https://img.shields.io/gitlab/pipeline/ae-group/ae_oaio_client/release0.3.21?logo=python)](
-    https://gitlab.com/ae-group/ae_oaio_client/-/tree/release0.3.21)
+    https://img.shields.io/gitlab/pipeline/ae-group/ae_oaio_client/release0.3.22?logo=python)](
+    https://gitlab.com/ae-group/ae_oaio_client/-/tree/release0.3.22)
 [![PyPIVersions](https://img.shields.io/pypi/v/ae_oaio_client)](
     https://pypi.org/project/ae-oaio-client/#history)
 
@@ -35,8 +35,8 @@
     https://pypi.org/project/ae-oaio-client/#files)
 
 
-## installation
 
+## installation
 
 execute the following command to install the
 ae.oaio_client module
@@ -57,10 +57,14 @@ following command in the root folder of this repository
 pip install --editable .[dev]
 ```
 
-the last command will install this module portion, along with the tools you need
-to develop and run tests or to extend the portion documentation. to contribute only to the unit tests or to the
-documentation of this portion, replace the setup extras key `dev` in the above command with `tests` or `docs`
-respectively.
+this command installs this module portion project
+along with the necessary tools to modify the source code,
+run unit tests, and build documentation. to install only
+the dependencies required for a specific task,  replace
+`dev` with one of the following:
+
+    * `tests`: for contributing to the unit test suite
+    * `docs`: for maintaining and building documentation
 
 more detailed explanations on how to contribute to this project
 [are available here](
@@ -69,7 +73,9 @@ https://gitlab.com/ae-group/ae_oaio_client/-/blob/develop/CONTRIBUTING.rst)
 
 ## namespace portion documentation
 
-information on the features and usage of this portion are available at
+the documentation of the source code of this portion is available at
 [ReadTheDocs](
 https://ae.readthedocs.io/en/latest/_autosummary/ae.oaio_client.html
 "ae_oaio_client documentation").
+
+
