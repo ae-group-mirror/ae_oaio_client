@@ -144,16 +144,16 @@ class CshMockApi(CshApiBase):
         found = files.pop(file_path, None) is not None
         if not found:
             for nam in files.copy().keys():
-                if nam.startswith(file_path + '/'):
+                if nam.startswith(file_path + "/"):
                     files.pop(nam)
                     found = True
             if not found:
                 self.error_message = f"CshMock-delete-error {file_path} not in {files}"
 
         if found:
-            left_parts = file_path.split('/')
+            left_parts = file_path.split("/")
             if len(left_parts) > 2:
-                dir_path = '/'.join(left_parts[:-1]) + '/'
+                dir_path = "/".join(left_parts[:-1]) + "/"
                 files[dir_path] = EMPTY_FOLDER
 
         return self.error_message
@@ -169,7 +169,7 @@ def _mocked_get_or_post_success_response(url: str, **kwargs) -> requests.Respons
     mock_res.status_code = 200
     mock_res.raise_for_status.return_value = None
 
-    act_slug = url.split('/')[-2]
+    act_slug = url.split("/")[-2]
     if act_slug == 'current_stamp':
         mock_res.json.return_value = {'current_stamp': now_stamp()}
     elif act_slug == 'csh_args':
@@ -976,7 +976,7 @@ def live_client():
         # noinspection PyProtectedMember
         assert not ocl._load_server_objectz()           # ensure empty/clean test env
         assert other_user not in [_['username'] for _ in ocl.userz_access('any_not_existing_oaio_id')]
-        assert liv_api.list_dir('/') == []  # None if storage_root dir does not exist, [] if the directory is empty
+        assert liv_api.list_dir("/") == []  # None if storage_root dir does not exist, [] if the directory is empty
 
         yield cast(Any, ocl)
 
@@ -985,7 +985,7 @@ def live_client():
         # noinspection PyProtectedMember
         assert not ocl._load_server_objectz()  # ensure empty/clean test env
         assert other_user not in [_['username'] for _ in ocl.userz_access('any_existing_or_not_existing_oaio_id')]
-        assert liv_api.list_dir('/') == []  # None if storage_root dir does not exist, [] if the directory is empty
+        assert liv_api.list_dir("/") == []  # None if storage_root dir does not exist, [] if the directory is empty
 
     finally:    # cleanup - also after a failed test
         if ocl:
@@ -998,7 +998,7 @@ def live_client():
             if ocl.error_message:
                 print(f"live test oaio server cleanup errors: \n{ocl.error_message}")
 
-        if liv_api and (liv_api.delete_file_or_folder('/') or liv_api.list_dir('/') is not None):
+        if liv_api and (liv_api.delete_file_or_folder("/") or liv_api.list_dir("/") is not None):
             print(f"live test storage server {storage_root=} cleanup errors: \n{liv_api.error_message}")
 
         if os_path_isdir(client_root):
