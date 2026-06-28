@@ -81,7 +81,7 @@ setup_kwargs = {
     },
     'python_requires': '>=3.12',
     'url': 'https://gitlab.com/ae-group/ae_oaio_client',
-    'version': '0.3.22',
+    'version': '0.3.23',
     'zip_safe': True,
 }
 
