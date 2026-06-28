@@ -13,8 +13,9 @@ import os
 import shutil
 
 from ast import literal_eval
+from collections.abc import Sequence
 from copy import deepcopy
-from typing import Optional, Sequence, cast
+from typing import cast
 
 import requests
 
@@ -33,7 +34,7 @@ from ae.oaio_model import (                                                     
     OaioValuesType)
 
 
-__version__ = '0.3.22'
+__version__ = '0.3.23'
 
 
 LAST_SYNC_STAMP_FILE = 'last_sync_stamp.txt'            #: file name to store the last synchronization timestamp
@@ -111,7 +112,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
             root_folder = os_path_join(self.client_root, FILES_DIR, oaio_id)
         return root_folder
 
-    def _client_server_file_api_paths(self, oai_obj: OaiObject) -> tuple[list[str], Optional[CshApiBase], str, str]:
+    def _client_server_file_api_paths(self, oai_obj: OaiObject) -> tuple[list[str], CshApiBase | None, str, str]:
         """ get attached files, the cloud storage api id, and the file root paths on client and cloud storage host. """
         values = oai_obj.client_values
         files = values.get(FILES_VALUES_KEY, [])
@@ -127,7 +128,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
 
         return files, csh_api, client_path, server_path
 
-    def _csh_api(self, csh_id: OaioCshIdType) -> Optional[CshApiBase]:
+    def _csh_api(self, csh_id: OaioCshIdType) -> CshApiBase | None:
         """ determine api and credentials of a cloud storage host specified by its id from the web server db/config. """
         res = self._request('get', f'csh_args/{csh_id}')
         if self._res_err(res, f"oaio server error in {csh_id=}-args fetch"):                # pragma: no cover
@@ -277,7 +278,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         return self.connected
 
     def _request(self, method: str, slug: str, _in_chk: bool = False, **request_kwargs
-                 ) -> Optional[requests.Response]:
+                 ) -> requests.Response | None:
         """ oaio server request checking CSRF for POST and automatic reconnect.
 
         :param method:          http request method (either 'get' or 'post').
@@ -321,7 +322,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
 
         return None
 
-    def _res_err(self, res: Optional[requests.Response], msg: str, failure: str = "", add_err: bool = True) -> str:
+    def _res_err(self, res: requests.Response | None, msg: str, failure: str = "", add_err: bool = True) -> str:
         """ web request response error checker, amending error message with status-code. """
         if res and res.ok and not failure:
             return ""
@@ -400,8 +401,8 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         self._last_sync_stamp = stamp
 
     def register_file(self, file_name: str,     # pylint: disable=too-many-arguments, too-many-positional-arguments
-                      file_content: Optional[bytes] = None, root_path: str = "", stamp: OaioStampType = "",
-                      csh_id: OaioCshIdType = "") -> Optional[OaiObject]:
+                      file_content: bytes | None = None, root_path: str = "", stamp: OaioStampType = "",
+                      csh_id: OaioCshIdType = "") -> OaiObject | None:
         """ register a new oaio file object.
 
         :param file_name:       name of the new file object to register.
@@ -434,7 +435,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         return self.register_object(values, stamp=stamp, oaio_id=oaio_id, csh_id=csh_id)
 
     def register_folder(self, root_path: str, stamp: OaioStampType = "",
-                        csh_id: OaioCshIdType = "") -> Optional[OaiObject]:
+                        csh_id: OaioCshIdType = "") -> OaiObject | None:
         """ register a new oaio folder object.
 
         :param root_path:       root path on the local-machine/client of the new folder object to register.
@@ -451,7 +452,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         return self.register_object(values, stamp=stamp, csh_id=csh_id)
 
     def register_object(self, values: OaioValuesType, stamp: OaioStampType = '',
-                        oaio_id: OaioIdType = '', csh_id: OaioCshIdType = '') -> Optional[OaiObject]:
+                        oaio_id: OaioIdType = '', csh_id: OaioCshIdType = '') -> OaiObject | None:
         """ register a new oaio data object.
 
         :param values:          values data to register as a new oaio object.
@@ -563,7 +564,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         return self.error_message
 
     def update_file(self, oaio_id: OaioIdType,  # pylint: disable=too-many-arguments, too-many-positional-arguments
-                    file_name: str = "", file_content: Optional[bytes] = None, root_path: str = "",
+                    file_name: str = "", file_content: bytes | None = None, root_path: str = "",
                     stamp: OaioStampType = "") -> OaiObject:
         """ update oai file object locally.
 

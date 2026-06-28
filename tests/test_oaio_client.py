@@ -1,7 +1,7 @@
 """ unit/integration tests of the oaio client package. """
 import os
 import shutil
-from typing import Any, Optional, cast
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -123,7 +123,7 @@ class CshMockApi(CshApiBase):
         self.csh_args = csh_args
         self.deployed_file_contents = deployed_file_contents
 
-    def deployed_file_content(self, file_path: str) -> Optional[bytes]:
+    def deployed_file_content(self, file_path: str) -> bytes | None:
         ret = self.deployed_file_contents.get(file_path)
         if ret is None:
             self.error_message = f"CshMock-content-error: {file_path} not in {self.deployed_file_contents}"
