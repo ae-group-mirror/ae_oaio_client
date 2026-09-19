@@ -1,58 +1,104 @@
-# THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.project_tpls v0.3.79
+# THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.project_tpls v0.3.103
 image: python:3.12
+ 
+ 
+.check_rules: &check-rules      # minimize job-runs on gitlab CI by separating rules for push/test and deploy
+  rules:
+    - if: $CI_COMMIT_BRANCH == "develop"
+      when: never
+    - if: $CI_COMMIT_TAG        # - if: $CI_COMMIT_TAG =~ /^v?[0-9]+[.][0-9]+([.][0-9]+)?$/
+      when: never               # CI_COMMIT_TAG is only set if the push does contain a new tag (after commit)
+    - if: $CI_COMMIT_BRANCH
+.release_rules: &release-rules  # release branch triggers deploy to PyPI
+  rules:
+    - if: $CI_COMMIT_BRANCH =~ /^release/
 
-
-
-
-
-before_script:
-  - python --version
-  - pip install --upgrade setuptools pip pipx
-  - pip install --upgrade -r requirements.txt -r tests/requirements.txt
-
-
-integrity:
+integrity:                      # run integrity tests
+  stage: test
+  <<: *check-rules
+  before_script:
+    - python --version
+    - pip --version
+    - pip install --upgrade pip pipx setuptools
+    - pip --version
+    - >
+      pip install --upgrade --force-reinstall --uploaded-prior-to=P9D
+      requests
+      anybadge
+      flake8
+      mypy
+      pylint
+      pytest
+      pytest-cov
+      typing
+      types-setuptools
+    - >
+      pip install --upgrade --force-reinstall 
+      ae_base
+      ae_app_log
+      ae_system
+      ae_paths
+      ae_cloud_storage
+      ae_oaio_model
   script:
     - pipx run --spec aedev_project_manager project-manager -v check-integrity
+    - |
+      if [ -f tests/requirements.txt ]; then
+        MISSING=""
+        for d in $ARTIFACT_DIRS; do
+          [ -d "$d" ] || MISSING="$MISSING $d"
+        done
+        if [ -n "$MISSING" ]; then
+          echo "CI-CHECK-ERROR: tests/requirements.txt exists, but required artifact paths were not created:"
+          for d in $MISSING; do
+            echo "    - $d/"
+          done
+          exit 1
+        fi
+      else
+        mkdir -p $ARTIFACT_DIRS
+      fi
+  variables:
+    ARTIFACT_DIRS: "mypy_report .pylint htmlcov .pytest_cache"
   artifacts:
-    paths:
+    paths:  # unremovable redundancy with integrity.variables.ARTIFACT_DIRS and the `cp`-commands in pages.script
       - mypy_report/
       - .pylint/
       - htmlcov/
-      - .pytest_cache
+      - .pytest_cache/
 
-
-pages:
+pages:                          # prepare artifacts for release
   stage: deploy
-  dependencies:
+  needs:
     - integrity
+  <<: *release-rules
   script:
     - ls -l -R
     - mkdir -p public/coverage
-    - mv -f -v htmlcov/* public/coverage
-    - mv -f -v .pytest_cache/coverage.svg public/
-    - mv -f -v mypy_report/lineprecision.txt public/
-    - mv -f -v mypy_report/mypy.svg public/
-    - mv -f -v .pylint/pylint.svg public/
-    - mv -f -v .pylint/pylint.log public/
+    - |
+      if [ -f tests/requirements.txt ]; then
+        cp -a -f -v htmlcov/. public/coverage/
+        cp -a -f -v .pytest_cache/coverage.svg public/
+        cp -a -f -v mypy_report/lineprecision.txt public/
+        cp -a -f -v mypy_report/mypy.svg public/
+        cp -a -f -v .pylint/pylint.svg public/
+        cp -a -f -v .pylint/pylint.log public/
+      fi
   artifacts:
     paths:
       - public
 
-
-pypi_deploy:
+pypi_deploy:                    # release to PyPI
   stage: deploy
-  rules:
-    # - if: $CI_COMMIT_TAG =~ /^v?[0-9]+[.][0-9]+([.][0-9]+)?$/
-    # CI_COMMIT_TAG is only set if the push does contain a new tag (and no new commit); separate push and rules are
-    # additionally creating duplicate jobs on gitlab CI - finally using release branch to trigger deploy.
-    - if: $CI_COMMIT_BRANCH =~ /^release/
+  needs:
+    - integrity
+  <<: *release-rules
   variables:
     # the pushed branch has to be a protected branch in order to get the CI variables for the twine/PyPI authentication.
     TWINE_USERNAME: $PYPI_USERNAME
     TWINE_PASSWORD: $PYPI_PASSWORD
   before_script:
-     - pip install --upgrade pip build twine
+     - pip install --upgrade build pip twine
      - python -m build
   script:
     # use test.pypi.org for integration/unit test projects (if is under :data:`~aedev.base.TEST_PROJECTS_PARENT_FOLDER`)
