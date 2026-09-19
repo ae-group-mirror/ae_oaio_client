@@ -17,7 +17,7 @@ from ae.oaio_model import (
     CREATE_ACCESS_RIGHT, DELETE_ACTION, FILES_DIR, FILES_VALUES_KEY, HTTP_HEADER_USR_ID, OBJECTS_DIR, REGISTER_ACTION,
     ROOT_VALUES_KEY, UPDATE_ACCESS_RIGHT, UPLOAD_ACTION,
     now_stamp, object_dict,
-    OaiObject)
+    OaiObject, MAX_STAMP_DIFF)
 
 
 from ae.oaio_client import LAST_SYNC_STAMP_FILE, OaioClient
@@ -262,7 +262,7 @@ def other_client(mocked_client):
 
 
 class TestOaioClientWithMockedServers:
-    def test_mocked_client_initialization(self, mocked_client):
+    def test_client_initialization(self, mocked_client):
         assert mocked_client
         assert not mocked_client.error_message
         assert mocked_client.csh_default_id == CSH_API_ID
@@ -322,6 +322,65 @@ class TestOaioClientWithMockedServers:
                 assert mocked_client.unregister_object(oai_obj.oaio_id) == "", "ERR:" + mocked_client.error_message
                 assert len(mocked_client.client_objectz) == local_object_count, "ERR:" + mocked_client.error_message
 
+    def test_client_server_file_api_paths_err(self, mocked_client):
+        stamp = now_stamp()
+        fil_name = 'tst_fil.xxx'
+        fil_content = b"test file \x00 binary content \x01\x02\x03\xff"
+        oai_obj = mocked_client.register_file(fil_name, file_content=fil_content, stamp=stamp)
+        oai_obj.csh_id = ""     # simulate error
+
+        assert mocked_client.error_message == ""
+
+        assert mocked_client._client_server_file_api_paths(oai_obj) == ([], None, "", "")
+
+        assert "empty/invalid" in mocked_client.error_message
+
+    def test_csh_api_err(self, mocked_client):
+        assert mocked_client.error_message == ""
+
+        with (patch.object(mocked_client, '_request'),
+              patch.object(mocked_client, '_res_err', return_value=True)):
+            assert mocked_client._csh_api("") is None
+
+        assert mocked_client.error_message == ""    # because _res_err() got mocked (not called)
+
+    def test_download_object_err(self, mocked_client):
+        with patch.object(mocked_client, '_client_server_file_api_paths', return_value=(['any_file'], None, "", "")):
+            assert mocked_client._download_object(MagicMock()) is False
+
+        assert mocked_client.error_message == ""
+
+        with patch.object(mocked_client, '_client_server_file_api_paths',
+                          return_value=(['any_file'], mocked_client._csh_api(mocked_client.csh_default_id), "", "")):
+            assert mocked_client._download_object(MagicMock()) is False
+
+        assert "cloud storage download error" in mocked_client.error_message
+
+    def test_reconnect_check_err(self, mocked_client):
+        assert mocked_client.error_message == ""
+        mock_res = MagicMock()
+        mock_res.ok = True
+
+        mocked_client.connected = True
+
+        with (patch.object(mocked_client, '_request', return_value=mock_res),
+              patch('ae.oaio_client.stamp_diff', return_value=MAX_STAMP_DIFF + 0.3)):
+            assert mocked_client._reconnect_check() is False
+
+        assert "clocks are out of sync" in mocked_client.error_message
+        assert mocked_client.connected is False
+
+        mocked_client.connected = True
+        mock_res.ok = False
+
+        with (patch.object(mocked_client, '_request', return_value=mock_res),
+              patch('ae.oaio_client.stamp_diff', return_value=MAX_STAMP_DIFF + 0.3)):
+            assert mocked_client._reconnect_check() is False
+
+        assert mocked_client.connected is False
+        assert 'uId' in mocked_client.error_message
+        assert "authentication error" in mocked_client.error_message
+
     def test_register_file_with_root(self, mocked_client):
         oai_obj = None
         stamp = now_stamp()
@@ -364,7 +423,7 @@ class TestOaioClientWithMockedServers:
         finally:
             if os_path_isdir(dir_path):
                 shutil.rmtree(dir_path)
-            if oai_obj:
+            if isinstance(oai_obj, OaiObject):
                 assert _csh_file_remove(mocked_client, oai_obj) == "", "ERR:" + mocked_client.error_message
                 assert _csh_mock_cleared_errors() == ""
                 assert mocked_client.unregister_object(oai_obj.oaio_id) == "", "ERR:" + mocked_client.error_message
@@ -452,9 +511,32 @@ class TestOaioClientWithMockedServers:
             assert oai_obj.csh_id == oai_obj.csh_id
 
         finally:
-            if oai_obj:
+            if isinstance(oai_obj, OaiObject):
                 mocked_client.unregister_object(oai_obj.oaio_id, wipe_files=True)
                 assert not os_path_isfile(os_path_join(mocked_client.client_root, OBJECTS_DIR, oai_obj.oaio_id))
+
+    def test_register_object_err(self, mocked_client):
+        with (patch.object(mocked_client, '_save_client_object_info'),
+              patch.object(mocked_client, 'synchronize_with_server_if_online', return_value=False)):
+            assert mocked_client.register_object({}) is None
+
+    def test_request_exception(self, mocked_client):
+        mocked_client.session.headers = {'X-CSRFToken': None}
+
+        with patch.object(mocked_client, '_res_err', return_value='tst _request() err msg'):
+            assert mocked_client._request("method", "slug", _in_chk=True) is None
+
+    def test_res_err_exception(self, mocked_client):
+        mock_res = MagicMock()
+        mock_res.ok = True
+        mock_res.json.side_effect = Exception()
+
+        msg = mocked_client._res_err(mock_res, 'tst _res_err error message', 'failure err msg')
+
+        assert 'tst _res_err error message' in msg
+        assert 'failure err msg' in msg
+        assert 'tst _res_err error message' in mocked_client.error_message
+        assert 'failure err msg' in mocked_client.error_message
 
     def test_synchronize_with_server_if_online(self, mocked_client):
         assert mocked_client.o_synchronize_with_server_if_online() is True
@@ -705,7 +787,7 @@ class TestOaioClientWithMockedServers:
         finally:
             if os_path_isdir(dir_path):
                 shutil.rmtree(dir_path)
-            if oai_obj:
+            if isinstance(oai_obj, OaiObject):
                 assert mocked_client.unregister_object(oai_obj.oaio_id) == "", "ERR:" + mocked_client.error_message
                 assert len(mocked_client.client_objectz) == 0
 
@@ -754,7 +836,7 @@ class TestOaioClientWithMockedServers:
             assert _csh_file_content(mocked_client, oai_obj) == {upd_name: fil_content}
 
         finally:
-            if oai_obj:
+            if isinstance(oai_obj, OaiObject):
                 assert mocked_client.unregister_object(oai_obj.oaio_id) == "", "ERR:" + mocked_client.error_message
                 assert _csh_file_remove(mocked_client, oai_obj) == ""
                 assert _csh_mock_cleared_errors() == ""
@@ -777,7 +859,6 @@ class TestOaioClientWithMockedServers:
         assert mocked_client.o_synchronize_with_server_if_online()
         local_object_count = len(mocked_client.client_objectz)
         csh_api = mocked_client._csh_api(mocked_client.csh_default_id)
-        oai_obj = None
         oaio_id = ""
 
         try:
@@ -831,7 +912,7 @@ class TestOaioClientWithMockedServers:
             err_msg = "ERR:" + mocked_client.error_message
             if oaio_id:
                 assert mocked_client.unregister_object(oaio_id, wipe_files=True) == "", err_msg
-                assert not os_path_isfile(os_path_join(mocked_client.client_root, OBJECTS_DIR, oai_obj.oaio_id))
+                assert not os_path_isfile(os_path_join(mocked_client.client_root, OBJECTS_DIR, oaio_id))
                 assert len(mocked_client.client_objectz) == local_object_count, err_msg
 
     def test_update_object_after_upload(self, mocked_client):
@@ -878,6 +959,46 @@ class TestOaioClientWithMockedServers:
             if oai_obj:
                 assert mocked_client.unregister_object(oai_obj.oaio_id, wipe_files=True) == ""
                 assert not os_path_isfile(os_path_join(mocked_client.client_root, OBJECTS_DIR, oai_obj.oaio_id))
+
+    def test_update_object_before_upload_without_stamp_arg(self, mocked_client):
+        oai_obj: OaiObject | None = None
+        try:
+            reg_stamp = now_stamp()
+            oai_obj = mocked_client.register_object({'val_key': 'reg_val'}, stamp=reg_stamp)
+            assert oai_obj
+
+            mocked_client.update_object(oai_obj.oaio_id, {'val_key': 'upd_val'})
+
+            assert oai_obj.oaio_id in mocked_client.client_objectz
+            assert mocked_client.client_objectz[oai_obj.oaio_id].client_stamp >= reg_stamp
+            assert mocked_client.client_objectz[oai_obj.oaio_id].client_values['val_key'] == 'upd_val'
+
+            assert not mocked_client.client_objectz[oai_obj.oaio_id].server_stamp
+            assert not mocked_client.client_objectz[oai_obj.oaio_id].server_values
+
+        finally:
+            if oai_obj:
+                assert mocked_client.unregister_object(oai_obj.oaio_id, wipe_files=True) == ""
+                assert not os_path_isfile(os_path_join(mocked_client.client_root, OBJECTS_DIR, oai_obj.oaio_id))
+
+    def test_upload_object_err(self, mocked_client):
+        with patch.object(mocked_client, '_client_server_file_api_paths', return_value=(['any_file'], None, "", "")):
+            assert mocked_client._upload_object(MagicMock()) is False
+
+        assert mocked_client.error_message == ""
+
+        with patch.object(mocked_client, '_client_server_file_api_paths',
+                          return_value=(['any_file'], mocked_client._csh_api(mocked_client.csh_default_id), "", "")):
+            assert mocked_client._upload_object(MagicMock()) is False
+
+        assert 'cloud storage upload error' in mocked_client.error_message
+
+        with (patch.object(mocked_client, '_client_server_file_api_paths',
+                           return_value=([], mocked_client._csh_api(mocked_client.csh_default_id), "", "")),
+              patch.object(mocked_client, '_request'),
+              patch('ae.oaio_client.object_dict'),
+              patch.object(mocked_client, '_res_err', return_value=True)):
+            assert mocked_client._upload_object(MagicMock()) is False
 
     def test_upsert_subscription(self, mocked_client):
         oai_obj = mocked_client.register_object({})
@@ -1184,7 +1305,7 @@ class TestIntegrationWithLiveServers:
             assert len(live_client.client_objectz) == local_object_count + 1
 
         finally:
-            if oai_obj and oaio_id:
+            if isinstance(oai_obj, OaiObject) and oaio_id:
                 assert live_client.unregister_object(oaio_id, wipe_files=True) == ""
                 assert len(live_client.client_objectz) == local_object_count
                 err_msg = _csh_file_remove(live_client, oai_obj, file_count=len(file_paths))
@@ -1444,7 +1565,7 @@ class TestIntegrationWithLiveServers:
                 if oaio_id:
                     assert live_client.unregister_object(oaio_id, wipe_files=True) == ""
                     assert len(live_client.client_objectz) == local_object_count
-                if oai_obj:
+                if isinstance(oai_obj, OaiObject):
                     err_msg = _csh_file_remove(live_client, oai_obj, file_count=len(file_paths))
                     assert reg_stamp in err_msg
                     assert oaio_id in err_msg

@@ -1,12 +1,12 @@
-<!-- THIS FILE IS EXCLUSIVELY MAINTAINED by the project ae.ae v0.3.104 -->
-<!-- THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.namespace_root_tpls v0.3.31 -->
-# oaio_client 0.3.23
+<!-- THIS FILE IS EXCLUSIVELY MAINTAINED by the project ae.ae v0.3.110 -->
+<!-- THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.namespace_root_tpls v0.3.33 -->
+# oaio_client 0.3.24
 
 [![GitLab develop](https://img.shields.io/gitlab/pipeline/ae-group/ae_oaio_client/develop?logo=python)](
     https://gitlab.com/ae-group/ae_oaio_client)
 [![LatestPyPIrelease](
-    https://img.shields.io/gitlab/pipeline/ae-group/ae_oaio_client/release0.3.23?logo=python)](
-    https://gitlab.com/ae-group/ae_oaio_client/-/tree/release0.3.23)
+    https://img.shields.io/gitlab/pipeline/ae-group/ae_oaio_client/release0.3.24?logo=python)](
+    https://gitlab.com/ae-group/ae_oaio_client/-/tree/release0.3.24)
 [![PyPIVersions](https://img.shields.io/pypi/v/ae_oaio_client)](
     https://pypi.org/project/ae-oaio-client/#history)
 

@@ -1,4 +1,4 @@
-# THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.project_tpls v0.3.79
+# THIS FILE IS EXCLUSIVELY MAINTAINED by the project aedev.project_tpls v0.3.103
 # pylint: disable=redefined-outer-name, unused-argument; suppress fixtures conflicts (silly pylint)
 """ fixtures for to test this project """
 import os
@@ -139,9 +139,13 @@ def _log_shutdown_calls(main_app: Any, exit_code: int, error_message: str = ""):
     trace = []
     for fra in stack_frames():
         inf = getframeinfo(fra)
-        line = f"      File \"{inf.filename}\", line {inf.lineno}, in func={inf.function}: {inf.code_context}"
+        line = f"   ** File \"{inf.filename}\", line {inf.lineno}, in func={inf.function}:"
         print(line)     # print out stack trace line in the format so that PyCharm will create a link to the code line
         trace.append(line)
+        if inf.code_context:
+            for code_line in inf.code_context:
+                print(f"    *     {code_line}")
+                trace.append(f"    *     {code_line}")
         if inf.function.startswith("test_"):
             break
     print()

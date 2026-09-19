@@ -5,9 +5,10 @@ Our Asynchronously Interchangeable Objects Client
 this portion is providing a client interface to manage asynchronously interchangeable oai objectz.
 
 each oai object has a user-definable values dictionary and can optionally have a file or folder attached to it.
+the data model/structure of an oai object is defined in the portion :mod:`ae.oaio_model`.
 
-an instance of the here implemented class :class:`~ae.oaio_client.OaioClient`, represents a client interface
-to the oaio server, a django server `available as git repository <https://gitlab.com/ae-group/oaio_server>`_.
+an instance of the here implemented class :class:`~ae.oaio_client.OaioClient`, represents a client interface to the
+oaio server, a django server app `available as open source git repository <https://gitlab.com/ae-group/oaio_server>`_.
 """
 import os
 import shutil
@@ -20,6 +21,7 @@ from typing import cast
 import requests
 
 from ae.base import (                                                                                   # type: ignore
+    URI_SVC_SEP,
     defuse, mask_secrets, os_path_isdir, os_path_isfile, os_path_join, os_path_relpath,
     read_file, write_bin_file, write_file)
 from ae.app_log import ErrorMsgMixin                                                                    # type: ignore
@@ -34,7 +36,7 @@ from ae.oaio_model import (                                                     
     OaioValuesType)
 
 
-__version__ = '0.3.23'
+__version__ = '0.3.24'
 
 
 LAST_SYNC_STAMP_FILE = 'last_sync_stamp.txt'            #: file name to store the last synchronization timestamp
@@ -76,7 +78,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
 
         super().__init__()
 
-        self.base_url = 'http' + ('' if host[:9] in ('localhost', '127.0.0.1') else 's') + f'://{host}/api/'
+        self.base_url = ("http" if host[:9] in ('localhost', '127.0.0.1') else "https") + f"{URI_SVC_SEP}{host}/api/"
         self.credentials = credentials
         self.user_name = credentials.get('username') or os_user_name()
         self.app_id = app_id or self.main_app and self.main_app.app_name or app_name_guess()
@@ -119,7 +121,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         csh_id = oai_obj.csh_id
         if not files or not csh_id or (csh_api := self._csh_api(csh_id)) is None:
             if files:
-                self.error_message = f"cloud storage {csh_id=} empty/invalid; {oai_obj=}"   # pragma: no cover
+                self.error_message = f"cloud storage {csh_id=} empty/invalid; {oai_obj=}"
             return [], None, "", ""
 
         oaio_id = oai_obj.oaio_id
@@ -131,7 +133,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
     def _csh_api(self, csh_id: OaioCshIdType) -> CshApiBase | None:
         """ determine api and credentials of a cloud storage host specified by its id from the web server db/config. """
         res = self._request('get', f'csh_args/{csh_id}')
-        if self._res_err(res, f"oaio server error in {csh_id=}-args fetch"):                # pragma: no cover
+        if self._res_err(res, f"oaio server error in {csh_id=}-args fetch"):
             return None
 
         csh_kwargs = res.json()                         # type: ignore # self._res_err ensures that res is not None
@@ -172,13 +174,13 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         :return:                True if object info and files got downloaded without errors, else False.
         """
         files, csh_api, client_path, server_path = self._client_server_file_api_paths(oai_obj)
-        if files and csh_api is None:                                                       # pragma: no cover
+        if files and csh_api is None:
             return False
 
         for file_path in files:
             assert csh_api is not None  # for mypy
             content = csh_api.deployed_file_content(os_path_join(server_path, file_path))
-            if content is None:                                                             # pragma: no cover
+            if content is None:
                 self.error_message = f"cloud storage download error: {csh_api.error_message=} {oai_obj=} {file_path=}"
                 return False
             write_bin_file(os_path_join(client_path, file_path), content, make_dirs=True)
@@ -261,14 +263,14 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
             if res and res.ok:
                 client_stamp = now_stamp()
                 server_stamp = res.json().get('current_stamp')
-                if abs(stamp_diff(client_stamp, server_stamp)) > MAX_STAMP_DIFF:            # pragma: no cover
+                if abs(stamp_diff(client_stamp, server_stamp)) > MAX_STAMP_DIFF:
                     self.error_message = f"clocks are out of sync; {client_stamp=} {server_stamp=}"
                     self.connected = False
                     return False
                 return True
 
-            self.session.headers.pop('X-CSRFToken')                                         # pragma: no cover
-            self.connected = False                                                          # pragma: no cover
+            self.session.headers.pop('X-CSRFToken')
+            self.connected = False
 
         if not self.connected:
             res = self._request('post', 'login/', _in_chk=True, json=self.credentials)
@@ -303,7 +305,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
                     ses_token = self.session.cookies.get('csrftoken')
                     if err_msg := self._res_err(res, f"CSRF fetch error in {method=} with {url=}",
                                                 failure="" if ses_token else ": empty token", add_err=False):
-                        raise Exception(err_msg)        # pylint: disable=broad-exception-raised # pragma: no cover
+                        raise Exception(err_msg)        # pylint: disable=broad-exception-raised
                 request_kwargs.setdefault('cookies', {'csrftoken': ses_token})
                 self.session.headers['X-CSRFToken'] = cast(str, ses_token)  # w/o cast in types-requests 2.31.0.20240311
                 self.session.headers['Referer'] = url               # needed only for https requests
@@ -315,8 +317,8 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
             self.error_message = ""
             return res
 
-        # pylint: disable-next=broad-exception-caught # pragma: no cover
-        except (requests.HTTPError, requests.ConnectionError, AssertionError, Exception) as exception:
+        # pylint: disable-next=broad-exception-caught
+        except (AssertionError, Exception) as exception:  # no BaseException inherit: requests.HTTPError/ConnectionError
             # noinspection PyStringConversionWithoutDunderMethod
             self._res_err(res, f"{method=} {exception=} {url=} {_in_chk=} {mask_secrets(request_kwargs)=}")
 
@@ -332,7 +334,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
             msg += f" {getattr(res, 'status_code', '?')=}"
             try:
                 msg += f" {res.json()=}"
-            except (AttributeError, Exception):         # pylint: disable=broad-exception-caught # pragma: no cover
+            except (AttributeError, Exception):         # pylint: disable=broad-exception-caught
                 msg += f" {getattr(res, 'content', '¿')=}"
 
         if add_err:
@@ -357,19 +359,19 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         """
         files, csh_api, client_path, server_path = self._client_server_file_api_paths(oai_obj)
         if files and csh_api is None:
-            return False                                                                    # pragma: no cover
+            return False
 
         for file_path in files:
             assert csh_api is not None  # for mypy
             if not csh_api.deploy_file(os_path_join(server_path, file_path),
-                                       source_path=os_path_join(client_path, file_path)):   # pragma: no cover
+                                       source_path=os_path_join(client_path, file_path)):
                 self.error_message = f"'{file_path}' cloud storage upload error: {csh_api.error_message=} {oai_obj=}"
                 return False
 
         action = UPLOAD_ACTION if oai_obj.server_stamp else REGISTER_ACTION
         res = self._request('post', f'{action}/', json=object_dict(oai_obj))
         if self._res_err(res, f"postponed {action} onto server of {oai_obj}"):
-            return False                                                                    # pragma: no cover
+            return False
 
         srv_dict = res.json()               # type: ignore # self._res_err ensures that res is not None
         assert srv_dict.get('oaio_id') == oai_obj.oaio_id, f"{srv_dict.get('oaio_id')=} not matching {oai_obj.oaio_id=}"
@@ -485,7 +487,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
         self._save_client_object_info(oai_obj)      # store new obj in local OBJECTS_DIR
 
         if not self.synchronize_with_server_if_online():
-            return None                                                                     # pragma: no cover
+            return None
 
         return oai_obj
 
@@ -636,7 +638,7 @@ class OaioClient(ErrorMsgMixin):            # pylint: disable=too-many-instance-
 
         if stamp:
             assert stamp > OLDEST_SYNC_STAMP, f"update_object(): too old stamp {stamp} specified; <={OLDEST_SYNC_STAMP}"
-        else:                                                                               # pragma: no cover
+        else:
             stamp = now_stamp()
 
         assert stamp > oai_obj.client_stamp, f"update_object(): got too old stamp {stamp}; > {oai_obj.client_stamp}"
