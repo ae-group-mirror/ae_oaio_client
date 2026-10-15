@@ -36,7 +36,7 @@ from ae.oaio_model import (                                                     
     OaioValuesType)
 
 
-__version__ = '0.3.24'
+__version__ = '0.3.25'
 
 
 LAST_SYNC_STAMP_FILE = 'last_sync_stamp.txt'            #: file name to store the last synchronization timestamp
