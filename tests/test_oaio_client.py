@@ -1,6 +1,5 @@
 """ unit/integration tests of the oaio client package. """
 import os
-import shutil
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
@@ -8,7 +7,6 @@ import pytest
 import requests
 
 from ae.base import (
-    TESTS_FOLDER,
     os_path_abspath, os_path_dirname, os_path_isdir, os_path_isfile, os_path_join, read_bin_file, write_bin_file)
 from ae.system import app_name_guess, load_dotenvs, os_device_id, os_user_name
 from ae.paths import normalize, placeholder_path
@@ -28,29 +26,24 @@ load_dotenvs()
 
 class TestInstantiation:
     """ client instantiation tests running on local machine and git/CI host, independent of mocked and live servers. """
-    def test_args(self):
+    def test_args(self, tmp_path):
         cre_args = {'cre_key': 'cre_val'}
-        tst_root = os_path_join(TESTS_FOLDER, 'tst')
+        tst_root = os_path_join(tmp_path, 'tst')
         loc_path = os_path_join(tst_root, 'root/path')
 
-        try:
-            ocl = OaioClient("hOsT", cre_args, app_id='app_id', device_id='dev_id', csh_default_id='csh_id',
-                             client_root=loc_path)
+        ocl = OaioClient("hOsT", cre_args, app_id='app_id', device_id='dev_id', csh_default_id='csh_id',
+                         client_root=loc_path)
 
-            assert "hOsT" in ocl.base_url
-            assert ocl.credentials == cre_args
-            assert ocl.app_id == 'app_id'
-            assert ocl.device_id == 'dev_id'
-            assert ocl.csh_default_id == 'csh_id'
-            assert ocl.client_root == normalize(loc_path)
+        assert "hOsT" in ocl.base_url
+        assert ocl.credentials == cre_args
+        assert ocl.app_id == 'app_id'
+        assert ocl.device_id == 'dev_id'
+        assert ocl.csh_default_id == 'csh_id'
+        assert ocl.client_root == normalize(loc_path)
 
-            assert os_path_isdir(os_path_join(loc_path, OBJECTS_DIR))
-            assert os_path_isdir(os_path_join(loc_path, FILES_DIR))
-            assert os_path_isfile(os_path_join(loc_path, LAST_SYNC_STAMP_FILE))
-
-        finally:
-            if os_path_isdir(tst_root):
-                shutil.rmtree(tst_root)
+        assert os_path_isdir(os_path_join(loc_path, OBJECTS_DIR))
+        assert os_path_isdir(os_path_join(loc_path, FILES_DIR))
+        assert os_path_isfile(os_path_join(loc_path, LAST_SYNC_STAMP_FILE))
 
     def test_args_defaults(self):
         ocl = OaioClient("", {})
@@ -213,7 +206,7 @@ def _mocked_get_or_post_failure_response(url: str, **kwargs) -> requests.Respons
     return mock_res
 
 
-def user_client(usr_name: str):
+def user_client(usr_name: str, temp_path: str):
     """ provide OaioClient instances simulating the specified user, connected to mocked oaio and cloud storage servers.
 
     the yield value is the OaioClient instance of the primary user.
@@ -222,7 +215,7 @@ def user_client(usr_name: str):
 
     referred and mocked `response` instance attributes and methods: `ok`, `status_code`, `json()`, `raise_for_status()`.
     """
-    cli_root = os_path_join(TESTS_FOLDER, f'uTstOC_root_{usr_name}')    # Oaio Client Unit Test Root of usr_nam
+    cli_root = os_path_join(temp_path, f'uTstOC_root_{usr_name}')    # Oaio Client Unit Test Root of usr_nam
     with patch('ae.oaio_client.requests') as mock_req:
         mock_ses_cls = MagicMock()
         mock_req.Session = mock_ses_cls
@@ -243,22 +236,20 @@ def user_client(usr_name: str):
 
         yield cast(Any, ocl)
 
-        if os_path_isdir(cli_root):
-            shutil.rmtree(cli_root)
         registered_oai_objectz.clear()
         deployed_file_contents.clear()
 
 
 @pytest.fixture
-def mocked_client(request):
+def mocked_client(request, tmp_path):
     """ OaioClient instance for user uId """
-    yield from user_client('uId')
+    yield from user_client('uId', str(tmp_path))
 
 
 @pytest.fixture
-def other_client(mocked_client):
+def other_client(mocked_client, tmp_path):
     """ OaioClient instance for user adaUsr """
-    yield from user_client('adaUsr')
+    yield from user_client('adaUsr', str(tmp_path))
 
 
 class TestOaioClientWithMockedServers:
@@ -278,7 +269,6 @@ class TestOaioClientWithMockedServers:
     def test_register_file(self, mocked_client):
         oai_obj: OaiObject | None = None
         stamp = now_stamp()
-        dir_path = ""
         fil_name = 'tst_fil.xxx'
         fil_content = b"test file \x00 binary content \x01\x02\x03\xff"
 
@@ -314,8 +304,6 @@ class TestOaioClientWithMockedServers:
             assert _csh_file_content(mocked_client, oai_obj) == {fil_name: fil_content}
 
         finally:
-            if os_path_isdir(dir_path):
-                shutil.rmtree(dir_path)
             if oai_obj:
                 assert _csh_file_remove(mocked_client, oai_obj) == "", "ERR:" + mocked_client.error_message
                 assert _csh_mock_cleared_errors() == ""
@@ -381,10 +369,10 @@ class TestOaioClientWithMockedServers:
         assert 'uId' in mocked_client.error_message
         assert "authentication error" in mocked_client.error_message
 
-    def test_register_file_with_root(self, mocked_client):
+    def test_register_file_with_root(self, mocked_client, tmp_path):
         oai_obj = None
         stamp = now_stamp()
-        dir_path = os_path_abspath(os_path_join(TESTS_FOLDER, 'regFileWithRootDir'))
+        dir_path = os_path_abspath(os_path_join(tmp_path, 'regFileWithRootDir'))
         fil_name = 'tst_fil.tst'
         fil_path = os_path_join(dir_path, fil_name)
         fil_content = b"test file \x00 having binary content \x01\x02\x03\xff"
@@ -421,8 +409,6 @@ class TestOaioClientWithMockedServers:
             assert _csh_file_content(mocked_client, oai_obj) == {fil_name: fil_content}
 
         finally:
-            if os_path_isdir(dir_path):
-                shutil.rmtree(dir_path)
             if isinstance(oai_obj, OaiObject):
                 assert _csh_file_remove(mocked_client, oai_obj) == "", "ERR:" + mocked_client.error_message
                 assert _csh_mock_cleared_errors() == ""
@@ -479,8 +465,6 @@ class TestOaioClientWithMockedServers:
                 assert csh_api.deployed_file_content(os_path_join(svr_path, fil_nam)) == fil_content + fil_nam.encode()
 
         finally:
-            if os_path_isdir(root_path):
-                shutil.rmtree(root_path)
             err_msg = "ERR:" + mocked_client.error_message
             if oaio_id:
                 assert mocked_client.unregister_object(oaio_id, wipe_files=True) == "", err_msg
@@ -746,9 +730,9 @@ class TestOaioClientWithMockedServers:
         assert oai_obj.oaio_id in err_msg
         assert oai_obj.username in err_msg
 
-    def test_update_file(self, mocked_client):
+    def test_update_file(self, mocked_client, tmp_path):
         oai_obj = None
-        dir_path = os_path_abspath(os_path_join(TESTS_FOLDER, 'tst_file_dir'))
+        dir_path = os_path_abspath(os_path_join(tmp_path, 'tst_file_dir'))
         fil_name = 'tst_fil.tst'
         fil_path = os_path_join(dir_path, fil_name)
         fil_content = b"update test file \x00 having binary content \x01\x02\x03\xff"
@@ -785,16 +769,14 @@ class TestOaioClientWithMockedServers:
             assert _csh_file_content(mocked_client, oai_obj) == {fil_name: fil_content}
 
         finally:
-            if os_path_isdir(dir_path):
-                shutil.rmtree(dir_path)
             if isinstance(oai_obj, OaiObject):
                 assert mocked_client.unregister_object(oai_obj.oaio_id) == "", "ERR:" + mocked_client.error_message
                 assert len(mocked_client.client_objectz) == 0
 
-    def test_update_file_and_root(self, mocked_client):
+    def test_update_file_and_root(self, mocked_client, tmp_path):
         oai_obj = None
         reg_root = mocked_client.client_root
-        upd_root = os_path_join(TESTS_FOLDER, 'upd_root')
+        upd_root = os_path_join(tmp_path, 'upd_root')
         reg_name = 'reg_fil.tst'
         upd_name = 'upd_fil.tst'
         reg_path = os_path_join(reg_root, reg_name)
@@ -841,10 +823,6 @@ class TestOaioClientWithMockedServers:
                 assert _csh_file_remove(mocked_client, oai_obj) == ""
                 assert _csh_mock_cleared_errors() == ""
                 assert len(mocked_client.client_objectz) == 0
-            if os_path_isdir(reg_root):
-                shutil.rmtree(reg_root)
-            if os_path_isdir(upd_root):
-                shutil.rmtree(upd_root)
 
     def test_update_folder(self, mocked_client):
         # noinspection PyTypeChecker
@@ -1068,10 +1046,11 @@ class TestOaioClientWithMockedServers:
 
 
 @pytest.fixture(scope="session")
-def live_client():
+def live_client(tmp_path_factory):
     """ on local machine connect to personal server in order to do integration tests """
+    temp_path = tmp_path_factory.mktemp('tst_live_client')
     storage_root = 'liTstOC_sto_root'
-    client_root = os_path_join(TESTS_FOLDER, 'liTstOC_cli_root')
+    client_root = os_path_join(temp_path, 'liTstOC_cli_root')
     assert not os_path_isdir(client_root)
 
     liv_api = ocl = None
@@ -1101,7 +1080,6 @@ def live_client():
 
         yield cast(Any, ocl)
 
-        # noinspection PyTypeChecker
         assert not os.listdir(local_obj_cache_path)
         # noinspection PyProtectedMember
         assert not ocl._load_server_objectz()  # ensure empty/clean test env
@@ -1121,9 +1099,6 @@ def live_client():
 
         if liv_api and (liv_api.delete_file_or_folder("/") or liv_api.list_dir("/") is not None):
             print(f"live test storage server {storage_root=} cleanup errors: \n{liv_api.error_message}")
-
-        if os_path_isdir(client_root):
-            shutil.rmtree(client_root)
 
 
 @pytest.mark.skipif("not os.environ.get('OAIO_HOST_NAME')", reason="disable tests on gitlab CI or if servers are down")
@@ -1145,7 +1120,6 @@ class TestIntegrationWithLiveServers:
     def test_register_file(self, live_client):
         oai_obj: OaiObject | None = None
         stamp = now_stamp()
-        dir_path = ""
         fil_name = 'tst_fil.yyy'
         fil_content = b"test file \x00 binary content \x01\x02\x03\xff"
 
@@ -1187,13 +1161,11 @@ class TestIntegrationWithLiveServers:
                 assert _csh_file_remove(live_client, oai_obj) == ""
                 assert live_client.unregister_object(oai_obj.oaio_id) == ""
                 assert len(live_client.client_objectz) == local_object_count
-            if os_path_isdir(dir_path):
-                shutil.rmtree(dir_path)
 
-    def test_register_file_with_root(self, live_client):
+    def test_register_file_with_root(self, live_client, tmp_path):
         oai_obj: OaiObject | None = None
         stamp = now_stamp()
-        dir_path = os_path_abspath(os_path_join(TESTS_FOLDER, 'reg file dir'))
+        dir_path = os_path_abspath(os_path_join(tmp_path, 'reg file dir'))
         fil_name = 'tst_fil.tst'
         fil_path = os_path_join(dir_path, fil_name)
         fil_content = b"test file \x00 having binary content \x01\x02\x03\xff"
@@ -1230,18 +1202,14 @@ class TestIntegrationWithLiveServers:
             assert _csh_file_content(live_client, oai_obj) == {fil_name: fil_content}
 
         finally:
-            try:
-                if oai_obj:
-                    assert _csh_file_remove(live_client, oai_obj) == ""
-                    assert live_client.unregister_object(oai_obj.oaio_id) == ""
-                    assert len(live_client.client_objectz) == local_object_count
-            finally:
-                if os_path_isdir(dir_path):
-                    shutil.rmtree(dir_path)
+            if oai_obj:
+                assert _csh_file_remove(live_client, oai_obj) == ""
+                assert live_client.unregister_object(oai_obj.oaio_id) == ""
+                assert len(live_client.client_objectz) == local_object_count
 
-    def test_register_folder_with_root(self, live_client):
+    def test_register_folder_with_root(self, live_client, tmp_path):
         stamp = now_stamp()
-        folder_path = os_path_abspath(os_path_join(TESTS_FOLDER, 'folder_root'))
+        folder_path = os_path_abspath(os_path_join(tmp_path, 'folder_root'))
         sub_dirs = ['sub_dir1', 'sub_dir3/sub_sub_dir']
         file_paths = ['tst_fil.tst',
                       os_path_join(sub_dirs[0], 'tst_sub1_fil.tst'),
@@ -1311,8 +1279,6 @@ class TestIntegrationWithLiveServers:
                 err_msg = _csh_file_remove(live_client, oai_obj, file_count=len(file_paths))
                 assert stamp in err_msg
                 assert oaio_id in err_msg
-            if os_path_isdir(folder_path):
-                shutil.rmtree(folder_path)
 
     def test_register_object(self, live_client):
         oai_obj: OaiObject | None = None
@@ -1451,50 +1417,44 @@ class TestIntegrationWithLiveServers:
         fil_name = 'tst_fil.zzz'
         fil_content = b"test file \x00 binary content \x01\x02\x03\xff"
         local_object_count = len(live_client.client_objectz)
-        dir_path = ""
-        try:
-            reg_obj = live_client.register_file(fil_name, file_content=b"", stamp=reg_stamp)
-            oaio_id = reg_obj.oaio_id
-            assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
+        reg_obj = live_client.register_file(fil_name, file_content=b"", stamp=reg_stamp)
+        oaio_id = reg_obj.oaio_id
+        assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
 
-            upd_stamp = now_stamp()
-            oai_obj = live_client.update_file(oaio_id, file_name=fil_name, file_content=fil_content, stamp=upd_stamp)
+        upd_stamp = now_stamp()
+        oai_obj = live_client.update_file(oaio_id, file_name=fil_name, file_content=fil_content, stamp=upd_stamp)
 
-            assert oai_obj is not None
-            assert oai_obj.oaio_id == oaio_id
-            dir_path = live_client._client_file_root(oaio_id, oai_obj.client_values)
-            assert live_client.error_message == ""
+        assert oai_obj is not None
+        assert oai_obj.oaio_id == oaio_id
+        dir_path = live_client._client_file_root(oaio_id, oai_obj.client_values)
+        assert live_client.error_message == ""
 
-            assert ROOT_VALUES_KEY not in oai_obj.client_values
-            assert FILES_VALUES_KEY in oai_obj.client_values
-            assert len(oai_obj.client_values[FILES_VALUES_KEY]) == 1
-            assert oai_obj.client_values[FILES_VALUES_KEY][0] == fil_name
-            assert os_path_isfile(os_path_join(dir_path, fil_name))
-            assert oai_obj.server_values == oai_obj.client_values
-            assert oai_obj.client_stamp == upd_stamp
-            assert oai_obj.server_stamp == reg_stamp
-            assert oai_obj.csh_access_right == CREATE_ACCESS_RIGHT
+        assert ROOT_VALUES_KEY not in oai_obj.client_values
+        assert FILES_VALUES_KEY in oai_obj.client_values
+        assert len(oai_obj.client_values[FILES_VALUES_KEY]) == 1
+        assert oai_obj.client_values[FILES_VALUES_KEY][0] == fil_name
+        assert os_path_isfile(os_path_join(dir_path, fil_name))
+        assert oai_obj.server_values == oai_obj.client_values
+        assert oai_obj.client_stamp == upd_stamp
+        assert oai_obj.server_stamp == reg_stamp
+        assert oai_obj.csh_access_right == CREATE_ACCESS_RIGHT
 
-            assert len(live_client.client_objectz) == local_object_count + 1
-            assert oaio_id in live_client.client_objectz
-            assert live_client.client_objectz[oaio_id] == oai_obj
+        assert len(live_client.client_objectz) == local_object_count + 1
+        assert oaio_id in live_client.client_objectz
+        assert live_client.client_objectz[oaio_id] == oai_obj
 
-            assert _csh_file_content(live_client, oai_obj) == {fil_name: None}
+        assert _csh_file_content(live_client, oai_obj) == {fil_name: None}
 
-            assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
+        assert live_client.o_synchronize_with_server_if_online(), f"{live_client.error_message=}"
 
-            assert _csh_file_content(live_client, oai_obj) == {fil_name: fil_content}
+        assert _csh_file_content(live_client, oai_obj) == {fil_name: fil_content}
 
-            assert _csh_file_remove(live_client, oai_obj) == ""
-            assert live_client.unregister_object(oai_obj.oaio_id) == ""
+        assert _csh_file_remove(live_client, oai_obj) == ""
+        assert live_client.unregister_object(oai_obj.oaio_id) == ""
 
-        finally:
-            if dir_path and os_path_isdir(dir_path):
-                shutil.rmtree(dir_path)
-
-    def test_update_folder_with_root(self, live_client):
+    def test_update_folder_with_root(self, live_client, tmp_path):
         reg_stamp = now_stamp()
-        folder_path = os_path_abspath(os_path_join(TESTS_FOLDER, 'fol_upd_root'))
+        folder_path = os_path_abspath(os_path_join(tmp_path, 'fol_upd_root'))
         sub_dirs = ['sub_dir1', 'sub_dir3/sub_sub_dir']
         file_paths = ['tst_fil.tst',
                       os_path_join(sub_dirs[0], 'tst_sub1_fil.tst'),
@@ -1561,17 +1521,13 @@ class TestIntegrationWithLiveServers:
             assert len(live_client.client_objectz) == local_object_count + 1
 
         finally:    # cleanup
-            try:
-                if oaio_id:
-                    assert live_client.unregister_object(oaio_id, wipe_files=True) == ""
-                    assert len(live_client.client_objectz) == local_object_count
-                if isinstance(oai_obj, OaiObject):
-                    err_msg = _csh_file_remove(live_client, oai_obj, file_count=len(file_paths))
-                    assert reg_stamp in err_msg
-                    assert oaio_id in err_msg
-            finally:
-                if os_path_isdir(folder_path):
-                    shutil.rmtree(folder_path)
+            if oaio_id:
+                assert live_client.unregister_object(oaio_id, wipe_files=True) == ""
+                assert len(live_client.client_objectz) == local_object_count
+            if isinstance(oai_obj, OaiObject):
+                err_msg = _csh_file_remove(live_client, oai_obj, file_count=len(file_paths))
+                assert reg_stamp in err_msg
+                assert oaio_id in err_msg
 
     def test_update_object(self, live_client):
         reg_stamp = now_stamp()
